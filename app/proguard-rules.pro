@@ -1,0 +1,3 @@
+-keep class com.beantechs.** { *; }
+-keep class rikka.shizuku.** { *; }
+-keep class moe.shizuku.** { *; }
