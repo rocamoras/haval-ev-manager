@@ -11,6 +11,11 @@ object EvStateHolder {
     var powerModelConfig       by mutableStateOf("--")
     var chargeSocTargetConfig  by mutableStateOf("--")
     var powerReserveConfig     by mutableStateOf("--")
+    var batteryLevel           by mutableStateOf("--")
+
+    /** Persisted via SharedPreferences; service reads prefs directly, UI reads this for display. */
+    var autoEnabled            by mutableStateOf(false)
+
     val actionLog              = mutableStateListOf<String>()
 
     fun interface CommandCallback {
@@ -27,12 +32,14 @@ object EvStateHolder {
         connected: Boolean,
         powerModel: String?,
         socTarget: String?,
-        powerReserve: String?
+        powerReserve: String?,
+        battery: String?
     ) {
         vehicleConnected      = connected
         powerModelConfig      = powerModel   ?: "--"
         chargeSocTargetConfig = socTarget    ?: "--"
         powerReserveConfig    = powerReserve ?: "--"
+        batteryLevel          = battery      ?: "--"
     }
 
     fun addLog(entry: String) {

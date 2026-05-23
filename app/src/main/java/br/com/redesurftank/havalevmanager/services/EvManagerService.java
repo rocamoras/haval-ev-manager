@@ -49,19 +49,24 @@ public class EvManagerService extends Service implements Shizuku.OnBinderDeadLis
 
     private static final String TAG = "EvManagerService";
 
-    private static final String CHANNEL_ID     = "EvManagerChannel";
-    private static final int    NOTIFICATION_ID = 1;
-    private static final String PREFS_NAME      = "ev_manager_prefs";
-    private static final String KEY_SHIZUKU_LIB = "shizuku_lib_location";
+    private static final String CHANNEL_ID         = "EvManagerChannel";
+    private static final int    NOTIFICATION_ID     = 1;
+    private static final String PREFS_NAME          = "ev_manager_prefs";
+    private static final String KEY_SHIZUKU_LIB     = "shizuku_lib_location";
+    private static final String KEY_AUTO_ENABLED    = "auto_enabled";
+    private static final String KEY_LAST_SOC_TARGET = "last_soc_target";
+    private static final int    DEFAULT_SOC_TARGET  = 80;   // start in charging phase
 
-    private static final String PROP_POWER_MODEL_CONFIG      = "car.ev_setting.power_model_config";
+    private static final String PROP_POWER_MODEL_CONFIG       = "car.ev_setting.power_model_config";
     private static final String PROP_CHARGE_SOC_TARGET_CONFIG = "car.ev_setting.charge_soc_target_config";
-    private static final String PROP_POWER_RESERVE_CONFIG    = "car.ev_setting.power_reserve_config";
+    private static final String PROP_POWER_RESERVE_CONFIG     = "car.ev_setting.power_reserve_config";
+    private static final String PROP_BATTERY_CURRENT          = "car.ev_info.power_battery_current";
 
     private static final String[] ALL_PROPS = {
         PROP_POWER_MODEL_CONFIG,
         PROP_CHARGE_SOC_TARGET_CONFIG,
-        PROP_POWER_RESERVE_CONFIG
+        PROP_POWER_RESERVE_CONFIG,
+        PROP_BATTERY_CURRENT
     };
 
     private static Method getServiceMethod;
@@ -83,9 +88,10 @@ public class EvManagerService extends Service implements Shizuku.OnBinderDeadLis
         }
     }
 
-    private HandlerThread handlerThread;
-    private Handler       backgroundHandler;
-    private final Handler mainHandler = new Handler(Looper.getMainLooper());
+    private HandlerThread     handlerThread;
+    private Handler           backgroundHandler;
+    private final Handler     mainHandler = new Handler(Looper.getMainLooper());
+    private SharedPreferences prefs;
 
     private boolean isShizukuInitialized = false;
     private boolean isServiceRunning     = false;
@@ -103,10 +109,16 @@ public class EvManagerService extends Service implements Shizuku.OnBinderDeadLis
         }
     };
 
+    // ──────────────────────────────────────────────────────────────────────────
+    // Lifecycle
+    // ──────────────────────────────────────────────────────────────────────────
+
     @Override
     public void onCreate() {
         super.onCreate();
         createNotificationChannel();
+        prefs = App.getDeviceProtectedContext()
+                .getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE);
         handlerThread = new HandlerThread("EvManagerThread");
         handlerThread.start();
         backgroundHandler = new Handler(handlerThread.getLooper());
@@ -130,8 +142,9 @@ public class EvManagerService extends Service implements Shizuku.OnBinderDeadLis
                     .build();
             startForeground(NOTIFICATION_ID, notification);
 
-            SharedPreferences prefs = App.getDeviceProtectedContext()
-                    .getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE);
+            // Restore persisted autoEnabled to StateHolder immediately on start
+            boolean savedAutoEnabled = prefs.getBoolean(KEY_AUTO_ENABLED, false);
+            mainHandler.post(() -> EvStateHolder.INSTANCE.setAutoEnabled(savedAutoEnabled));
 
             boolean needsBootstrap = true;
             try {
@@ -199,6 +212,31 @@ public class EvManagerService extends Service implements Shizuku.OnBinderDeadLis
         return START_STICKY;
     }
 
+    @Override
+    public IBinder onBind(Intent intent) { return null; }
+
+    @Override
+    public void onDestroy() {
+        if (handlerThread != null) handlerThread.quitSafely();
+        isServiceRunning = false;
+        Shizuku.removeBinderReceivedListener(this::onShizukuBinderReceived);
+        Shizuku.removeBinderDeadListener(this);
+        try {
+            if (controlService != null)
+                controlService.unRegisterDataChangedListener(getPackageName(), vehicleDataListener);
+        } catch (Exception ignored) {}
+        mainHandler.post(() -> {
+            EvStateHolder.INSTANCE.updateEvData(false, null, null, null, null);
+            EvStateHolder.INSTANCE.commandCallback = null;
+        });
+        Log.w(TAG, "Service destroyed");
+        super.onDestroy();
+    }
+
+    // ──────────────────────────────────────────────────────────────────────────
+    // Shizuku bootstrap
+    // ──────────────────────────────────────────────────────────────────────────
+
     private synchronized void onShizukuBinderReceived() {
         if (!isServiceRunning) return;
         Shizuku.removeBinderReceivedListener(this::onShizukuBinderReceived);
@@ -262,6 +300,10 @@ public class EvManagerService extends Service implements Shizuku.OnBinderDeadLis
         }, filter, ContextCompat.RECEIVER_NOT_EXPORTED);
     }
 
+    // ──────────────────────────────────────────────────────────────────────────
+    // Vehicle service connection
+    // ──────────────────────────────────────────────────────────────────────────
+
     private boolean connectToVehicleService() {
         try {
             if (!Shizuku.pingBinder()) {
@@ -288,17 +330,22 @@ public class EvManagerService extends Service implements Shizuku.OnBinderDeadLis
 
             Log.w(TAG, "Connected to vehicle service — powerModel=" + dataCache.get(PROP_POWER_MODEL_CONFIG)
                     + " socTarget=" + dataCache.get(PROP_CHARGE_SOC_TARGET_CONFIG)
-                    + " powerReserve=" + dataCache.get(PROP_POWER_RESERVE_CONFIG));
+                    + " powerReserve=" + dataCache.get(PROP_POWER_RESERVE_CONFIG)
+                    + " battery=" + dataCache.get(PROP_BATTERY_CURRENT));
 
             EvStateHolder.INSTANCE.commandCallback = (key, value) ->
                     backgroundHandler.post(() -> {
                         try {
-                            sendEvCommand(key, value);
-                            dataCache.put(key, value);
-                            Log.w(TAG, "Command sent: " + key + " = " + value);
-                            pushState();
+                            if ("auto_enabled".equals(key)) {
+                                handleAutoToggle("true".equals(value));
+                            } else {
+                                sendEvCommand(key, value);
+                                dataCache.put(key, value);
+                                Log.w(TAG, "Command sent: " + key + " = " + value);
+                                pushState();
+                            }
                         } catch (Exception e) {
-                            Log.e(TAG, "Error sending command: " + e.getMessage(), e);
+                            Log.e(TAG, "Error handling command: " + e.getMessage(), e);
                         }
                     });
 
@@ -311,20 +358,135 @@ public class EvManagerService extends Service implements Shizuku.OnBinderDeadLis
         }
     }
 
-    private void pushState() {
-        String powerModel  = dataCache.get(PROP_POWER_MODEL_CONFIG);
-        String socTarget   = dataCache.get(PROP_CHARGE_SOC_TARGET_CONFIG);
-        String powerReserve = dataCache.get(PROP_POWER_RESERVE_CONFIG);
+    // ──────────────────────────────────────────────────────────────────────────
+    // Auto toggle
+    // ──────────────────────────────────────────────────────────────────────────
 
-        mainHandler.post(() ->
-            EvStateHolder.INSTANCE.updateEvData(true, powerModel, socTarget, powerReserve)
-        );
+    /** Called on background thread. Persists the new value and, on enable, sets initial state. */
+    private void handleAutoToggle(boolean enabled) throws Exception {
+        prefs.edit().putBoolean(KEY_AUTO_ENABLED, enabled).apply();
+        mainHandler.post(() -> EvStateHolder.INSTANCE.setAutoEnabled(enabled));
+        Log.w(TAG, "Auto mode " + (enabled ? "enabled" : "disabled"));
+
+        if (enabled) {
+            // 1. Enforce base settings: HEV + priority reserve
+            sendEvCommand(PROP_POWER_MODEL_CONFIG, "0", true);
+            dataCache.put(PROP_POWER_MODEL_CONFIG, "0");
+            sendEvCommand(PROP_POWER_RESERVE_CONFIG, "0", true);
+            dataCache.put(PROP_POWER_RESERVE_CONFIG, "0");
+
+            // 2. Pick initial SOC target from current battery level
+            String batteryStr = dataCache.get(PROP_BATTERY_CURRENT);
+            int initialSoc = DEFAULT_SOC_TARGET;
+            if (batteryStr != null) {
+                try {
+                    int battery = Integer.parseInt(batteryStr.trim());
+                    if (battery <= 20) {
+                        initialSoc = 80;   // battery low → charge first
+                    } else if (battery >= 75) {
+                        initialSoc = 20;   // battery high → discharge first
+                    } else {
+                        // Middle range: resume saved phase, or default to charging
+                        initialSoc = prefs.getInt(KEY_LAST_SOC_TARGET, DEFAULT_SOC_TARGET);
+                    }
+                } catch (NumberFormatException ignored) {}
+            }
+            prefs.edit().putInt(KEY_LAST_SOC_TARGET, initialSoc).apply();
+            sendEvCommand(PROP_CHARGE_SOC_TARGET_CONFIG, String.valueOf(initialSoc), true);
+            dataCache.put(PROP_CHARGE_SOC_TARGET_CONFIG, String.valueOf(initialSoc));
+        }
+        pushState();
     }
 
+    // ──────────────────────────────────────────────────────────────────────────
+    // State push & automation evaluation (always on background thread)
+    // ──────────────────────────────────────────────────────────────────────────
+
+    private void pushState() {
+        String powerModel   = dataCache.get(PROP_POWER_MODEL_CONFIG);
+        String socTarget    = dataCache.get(PROP_CHARGE_SOC_TARGET_CONFIG);
+        String powerReserve = dataCache.get(PROP_POWER_RESERVE_CONFIG);
+        String battery      = dataCache.get(PROP_BATTERY_CURRENT);
+        boolean autoOn      = prefs != null && prefs.getBoolean(KEY_AUTO_ENABLED, false);
+
+        mainHandler.post(() -> {
+            EvStateHolder.INSTANCE.updateEvData(true, powerModel, socTarget, powerReserve, battery);
+            EvStateHolder.INSTANCE.setAutoEnabled(autoOn);
+        });
+        evaluateAutomation();
+    }
+
+    /**
+     * Checks the descida/subida state machine and fires SOC target changes when thresholds
+     * are crossed. Must be called on the background thread.
+     *
+     * Phase tracking via {@code KEY_LAST_SOC_TARGET}:
+     *   80 → charging phase  → wait battery ≥ 75 % → set SOC = 20, switch to discharging
+     *   20 → discharging phase → wait battery ≤ 20 % → set SOC = 80, switch to charging
+     */
+    private void evaluateAutomation() {
+        if (prefs == null || !prefs.getBoolean(KEY_AUTO_ENABLED, false)) return;
+
+        // Always enforce base settings while auto is on
+        try {
+            if (!"0".equals(dataCache.get(PROP_POWER_MODEL_CONFIG))) {
+                sendEvCommand(PROP_POWER_MODEL_CONFIG, "0", true);
+                dataCache.put(PROP_POWER_MODEL_CONFIG, "0");
+            }
+            if (!"0".equals(dataCache.get(PROP_POWER_RESERVE_CONFIG))) {
+                sendEvCommand(PROP_POWER_RESERVE_CONFIG, "0", true);
+                dataCache.put(PROP_POWER_RESERVE_CONFIG, "0");
+            }
+        } catch (Exception e) {
+            Log.e(TAG, "evaluateAutomation: error enforcing base settings", e);
+        }
+
+        // Battery SOC cycle
+        String batteryStr = dataCache.get(PROP_BATTERY_CURRENT);
+        if (batteryStr == null) return;
+        int battery;
+        try {
+            battery = Integer.parseInt(batteryStr.trim());
+        } catch (NumberFormatException e) {
+            return;
+        }
+
+        int lastSocTarget = prefs.getInt(KEY_LAST_SOC_TARGET, DEFAULT_SOC_TARGET);
+
+        try {
+            if (lastSocTarget == 80 && battery >= 75) {
+                // Charging phase complete → switch to discharging
+                Log.w(TAG, "AUTO: battery " + battery + "% ≥ 75 → soc_target = 20");
+                prefs.edit().putInt(KEY_LAST_SOC_TARGET, 20).apply();
+                sendEvCommand(PROP_CHARGE_SOC_TARGET_CONFIG, "20", true);
+                dataCache.put(PROP_CHARGE_SOC_TARGET_CONFIG, "20");
+                pushState();   // re-push updated soc value to UI
+            } else if (lastSocTarget == 20 && battery <= 20) {
+                // Discharging phase complete → switch to charging
+                Log.w(TAG, "AUTO: battery " + battery + "% ≤ 20 → soc_target = 80");
+                prefs.edit().putInt(KEY_LAST_SOC_TARGET, 80).apply();
+                sendEvCommand(PROP_CHARGE_SOC_TARGET_CONFIG, "80", true);
+                dataCache.put(PROP_CHARGE_SOC_TARGET_CONFIG, "80");
+                pushState();   // re-push updated soc value to UI
+            }
+        } catch (Exception e) {
+            Log.e(TAG, "evaluateAutomation: error sending SOC command", e);
+        }
+    }
+
+    // ──────────────────────────────────────────────────────────────────────────
+    // Helpers
+    // ──────────────────────────────────────────────────────────────────────────
+
     private void sendEvCommand(String key, String value) throws Exception {
+        sendEvCommand(key, value, false);
+    }
+
+    private void sendEvCommand(String key, String value, boolean isAuto) throws Exception {
         controlService.request("cmd.common.request.set", key, value);
         String label = keyLabel(key);
-        final String logEntry = timeFormat.format(new Date()) + "  " + label + " → " + value;
+        String prefix = isAuto ? "[AUTO] " : "";
+        final String logEntry = timeFormat.format(new Date()) + "  " + prefix + label + " → " + value;
         mainHandler.post(() -> EvStateHolder.INSTANCE.addLog(logEntry));
     }
 
@@ -333,6 +495,7 @@ public class EvManagerService extends Service implements Shizuku.OnBinderDeadLis
             case PROP_POWER_MODEL_CONFIG:       return "power_model_config";
             case PROP_CHARGE_SOC_TARGET_CONFIG: return "charge_soc_target_config";
             case PROP_POWER_RESERVE_CONFIG:     return "power_reserve_config";
+            case PROP_BATTERY_CURRENT:          return "power_battery_current";
             default:                            return key;
         }
     }
@@ -343,26 +506,9 @@ public class EvManagerService extends Service implements Shizuku.OnBinderDeadLis
         getSystemService(NotificationManager.class).createNotificationChannel(channel);
     }
 
-    @Override
-    public IBinder onBind(Intent intent) { return null; }
-
-    @Override
-    public void onDestroy() {
-        if (handlerThread != null) handlerThread.quitSafely();
-        isServiceRunning = false;
-        Shizuku.removeBinderReceivedListener(this::onShizukuBinderReceived);
-        Shizuku.removeBinderDeadListener(this);
-        try {
-            if (controlService != null)
-                controlService.unRegisterDataChangedListener(getPackageName(), vehicleDataListener);
-        } catch (Exception ignored) {}
-        mainHandler.post(() -> {
-            EvStateHolder.INSTANCE.updateEvData(false, null, null, null);
-            EvStateHolder.INSTANCE.commandCallback = null;
-        });
-        Log.w(TAG, "Service destroyed");
-        super.onDestroy();
-    }
+    // ──────────────────────────────────────────────────────────────────────────
+    // Restart
+    // ──────────────────────────────────────────────────────────────────────────
 
     @Override
     public void onBinderDead() {
@@ -377,7 +523,7 @@ public class EvManagerService extends Service implements Shizuku.OnBinderDeadLis
         isServiceRunning     = false;
         Shizuku.removeBinderReceivedListener(this::onShizukuBinderReceived);
         Shizuku.removeBinderDeadListener(this);
-        mainHandler.post(() -> EvStateHolder.INSTANCE.updateEvData(false, null, null, null));
+        mainHandler.post(() -> EvStateHolder.INSTANCE.updateEvData(false, null, null, null, null));
         Log.w(TAG, "Scheduling service restart...");
         Intent broadcastIntent = new Intent(this, RestartReceiver.class);
         PendingIntent pendingIntent = PendingIntent.getBroadcast(

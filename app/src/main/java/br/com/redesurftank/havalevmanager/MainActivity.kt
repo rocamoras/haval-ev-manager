@@ -19,7 +19,9 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Autorenew
 import androidx.compose.material.icons.filled.BatteryChargingFull
+import androidx.compose.material.icons.filled.BatteryFull
 import androidx.compose.material.icons.filled.ElectricCar
 import androidx.compose.material.icons.filled.EnergySavingsLeaf
 import androidx.compose.material.icons.filled.Refresh
@@ -27,6 +29,7 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
@@ -48,7 +51,6 @@ import java.io.File
 import java.io.FileOutputStream
 import java.net.HttpURLConnection
 import java.net.URL
-import java.text.SimpleDateFormat
 
 private const val TAG = "MainActivity"
 private const val GITHUB_RELEASES_API =
@@ -76,6 +78,10 @@ private val HmiBorderStr  = Color(0x1FFFFFFF)
 private val ValueColor0   = Color(0xFF6B6B6B)
 private val ValueColor1   = Color(0xFF60A5FA)
 private val ValueColor2   = HmiAccent
+
+// Battery-level colors
+private val BatteryRed    = Color(0xFFEF4444)
+private val BatteryAmber  = Color(0xFFF59E0B)
 
 private const val PROP_POWER_MODEL   = "car.ev_setting.power_model_config"
 private const val PROP_CHARGE_SOC    = "car.ev_setting.charge_soc_target_config"
@@ -243,7 +249,18 @@ fun MainScreen() {
             Spacer(Modifier.height(10.dp))
         }
 
-        // Cards row — fills most of the height
+        // Auto-cycle toggle — full width
+        AutoToggleCard(
+            modifier         = Modifier.fillMaxWidth(),
+            autoEnabled      = state.autoEnabled,
+            connected        = state.vehicleConnected,
+            chargeSocTarget  = state.chargeSocTargetConfig,
+            batteryLevel     = state.batteryLevel
+        )
+
+        Spacer(Modifier.height(10.dp))
+
+        // Cards row — fills most of the remaining height
         Row(
             modifier              = Modifier.fillMaxWidth().weight(1f),
             horizontalArrangement = Arrangement.spacedBy(16.dp)
@@ -254,7 +271,8 @@ fun MainScreen() {
                 propKey   = PROP_POWER_MODEL,
                 value     = state.powerModelConfig,
                 icon      = Icons.Filled.ElectricCar,
-                connected = state.vehicleConnected
+                connected = state.vehicleConnected,
+                locked    = state.autoEnabled
             )
             EvReadOnlyCard(
                 modifier = Modifier.weight(1f).fillMaxHeight(),
@@ -268,14 +286,19 @@ fun MainScreen() {
                 propKey   = PROP_POWER_RESERVE,
                 value     = state.powerReserveConfig,
                 icon      = Icons.Filled.EnergySavingsLeaf,
-                connected = state.vehicleConnected
+                connected = state.vehicleConnected,
+                locked    = state.autoEnabled
+            )
+            BatteryCard(
+                modifier     = Modifier.weight(1f).fillMaxHeight(),
+                batteryLevel = state.batteryLevel
             )
         }
 
         Spacer(Modifier.height(12.dp))
 
         ActionLog(
-            modifier = Modifier.fillMaxWidth().height(110.dp),
+            modifier = Modifier.fillMaxWidth().height(85.dp),
             entries  = state.actionLog.toList()
         )
     }
@@ -385,6 +408,93 @@ fun StatusDot(connected: Boolean) {
 }
 
 // ─────────────────────────────────────────────────────────────
+// AutoToggleCard — full-width toggle for the EV cycle automation
+// ─────────────────────────────────────────────────────────────
+
+@Composable
+fun AutoToggleCard(
+    modifier        : Modifier = Modifier,
+    autoEnabled     : Boolean,
+    connected       : Boolean,
+    chargeSocTarget : String,
+    batteryLevel    : String
+) {
+    val bgGradient = if (autoEnabled)
+        Brush.horizontalGradient(listOf(HmiAccentSoft, Color.Transparent))
+    else
+        Brush.horizontalGradient(listOf(Color.Transparent, Color.Transparent))
+    val borderColor = if (autoEnabled) HmiAccentEdge else HmiBorder
+
+    val battery = batteryLevel.toIntOrNull()
+    val phaseText = when {
+        !connected       -> "Aguardando conexão com o veículo"
+        !autoEnabled     -> "Toque para ativar o ciclo automático de carga"
+        chargeSocTarget == "80" -> buildString {
+            append("⬆  Carregando — aguardando bateria ≥ 75%")
+            if (battery != null) append("  ·  bateria: $battery%")
+        }
+        chargeSocTarget == "20" -> buildString {
+            append("⬇  Descarregando — aguardando bateria ≤ 20%")
+            if (battery != null) append("  ·  bateria: $battery%")
+        }
+        else             -> "Aguardando leitura do SOC target…"
+    }
+
+    Box(
+        modifier = modifier
+            .background(bgGradient, RoundedCornerShape(18.dp))
+            .border(1.dp, borderColor, RoundedCornerShape(18.dp))
+            .padding(horizontal = 24.dp, vertical = 14.dp)
+    ) {
+        Row(
+            modifier              = Modifier.fillMaxWidth(),
+            verticalAlignment     = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.SpaceBetween
+        ) {
+            Row(
+                modifier              = Modifier.weight(1f),
+                verticalAlignment     = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(14.dp)
+            ) {
+                Icon(
+                    imageVector        = Icons.Filled.Autorenew,
+                    contentDescription = null,
+                    tint               = if (autoEnabled) HmiAccent else HmiFgDim,
+                    modifier           = Modifier.size(24.dp)
+                )
+                Column(verticalArrangement = Arrangement.spacedBy(3.dp)) {
+                    Text(
+                        text          = "CICLO AUTOMÁTICO",
+                        fontSize      = 12.sp,
+                        fontWeight    = FontWeight.Bold,
+                        color         = if (autoEnabled) HmiAccent else HmiFgMuted,
+                        letterSpacing = 1.5.sp
+                    )
+                    Text(
+                        text     = phaseText,
+                        fontSize = 11.sp,
+                        color    = HmiFgDim
+                    )
+                }
+            }
+            Switch(
+                checked         = autoEnabled,
+                onCheckedChange = { if (connected) EvStateHolder.sendCommand("auto_enabled", it.toString()) },
+                enabled         = connected,
+                colors          = SwitchDefaults.colors(
+                    checkedThumbColor         = HmiBg,
+                    checkedTrackColor         = HmiAccent,
+                    uncheckedThumbColor       = HmiFgDim,
+                    uncheckedTrackColor       = HmiSurface2,
+                    disabledCheckedTrackColor = HmiAccent.copy(alpha = 0.38f),
+                    disabledUncheckedTrackColor = HmiSurface2.copy(alpha = 0.38f)
+                )
+            )
+        }
+    }
+}
+
+// ─────────────────────────────────────────────────────────────
 // EvCycleCard — click to cycle 0 → 1 → 2 → 0
 // ─────────────────────────────────────────────────────────────
 
@@ -395,11 +505,12 @@ fun EvCycleCard(
     propKey   : String,
     value     : String,
     icon      : ImageVector,
-    connected : Boolean
+    connected : Boolean,
+    locked    : Boolean = false
 ) {
     val isUnknown   = value == "--"
     val currentInt  = value.toIntOrNull()
-    val isClickable = connected && !isUnknown
+    val isClickable = connected && !isUnknown && !locked
 
     val valueColor = when (currentInt) {
         0    -> ValueColor0
@@ -408,14 +519,17 @@ fun EvCycleCard(
         else -> HmiFgDim
     }
 
-    val bgGradient = if (isClickable && currentInt != null && currentInt > 0) {
+    val bgGradient = if (!locked && isClickable && currentInt != null && currentInt > 0) {
         Brush.verticalGradient(listOf(HmiAccentSoft, Color.Transparent))
     } else {
         Brush.verticalGradient(listOf(Color.Transparent, Color.Transparent))
     }
 
-    val borderColor = if (isClickable && currentInt != null && currentInt > 0)
-        HmiAccentEdge else HmiBorder
+    val borderColor = when {
+        locked                                         -> Color(0x1FF59E0B)  // amber tint when locked by auto
+        isClickable && currentInt != null && currentInt > 0 -> HmiAccentEdge
+        else                                           -> HmiBorder
+    }
 
     Box(
         modifier = modifier
@@ -437,7 +551,11 @@ fun EvCycleCard(
                 Icon(
                     imageVector        = icon,
                     contentDescription = null,
-                    tint               = if (isClickable && currentInt != null && currentInt > 0) HmiAccent else HmiFgDim,
+                    tint               = when {
+                        locked                                          -> BatteryAmber.copy(alpha = 0.6f)
+                        isClickable && currentInt != null && currentInt > 0 -> HmiAccent
+                        else                                            -> HmiFgDim
+                    },
                     modifier           = Modifier.size(28.dp)
                 )
                 Text(
@@ -495,11 +613,15 @@ fun EvCycleCard(
                         }
                     }
                 }
-                Text(
-                    text     = if (isClickable) "Toque para alterar" else if (!connected) "Aguardando conexão" else "--",
-                    fontSize = 10.sp,
-                    color    = HmiFgDim
-                )
+                // Footer hint
+                val footerText = when {
+                    locked     -> "Controlado pelo Auto"
+                    isClickable -> "Toque para alterar"
+                    !connected  -> "Aguardando conexão"
+                    else        -> "--"
+                }
+                val footerColor = if (locked) BatteryAmber.copy(alpha = 0.6f) else HmiFgDim
+                Text(text = footerText, fontSize = 10.sp, color = footerColor)
             }
         }
     }
@@ -579,6 +701,112 @@ fun EvReadOnlyCard(
 }
 
 // ─────────────────────────────────────────────────────────────
+// BatteryCard — read-only battery level with color indicator
+// ─────────────────────────────────────────────────────────────
+
+@Composable
+fun BatteryCard(
+    modifier     : Modifier = Modifier,
+    batteryLevel : String
+) {
+    val isUnknown = batteryLevel == "--"
+    val battery   = batteryLevel.toIntOrNull()
+
+    val batteryColor = when {
+        battery == null -> HmiFgDim
+        battery <= 20   -> BatteryRed
+        battery >= 75   -> HmiAccent
+        else            -> BatteryAmber
+    }
+
+    Box(
+        modifier = modifier
+            .background(HmiSurface, RoundedCornerShape(22.dp))
+            .border(1.dp, HmiBorder, RoundedCornerShape(22.dp))
+            .padding(22.dp)
+    ) {
+        Column(
+            modifier            = Modifier.fillMaxSize(),
+            verticalArrangement = Arrangement.SpaceBetween
+        ) {
+            Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                Icon(
+                    imageVector        = Icons.Filled.BatteryFull,
+                    contentDescription = null,
+                    tint               = batteryColor,
+                    modifier           = Modifier.size(28.dp)
+                )
+                Text(
+                    text       = "power_battery_current",
+                    fontSize   = 11.sp,
+                    color      = HmiFgMuted,
+                    fontFamily = FontFamily.Monospace
+                )
+                Text(
+                    text     = "car.ev_info",
+                    fontSize = 10.sp,
+                    color    = HmiFgDim
+                )
+            }
+
+            Box(
+                modifier         = Modifier.weight(1f).fillMaxWidth(),
+                contentAlignment = Alignment.Center
+            ) {
+                Column(
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.Center
+                ) {
+                    Text(
+                        text       = batteryLevel,
+                        fontSize   = if (isUnknown) 64.sp else 72.sp,
+                        fontWeight = FontWeight.Bold,
+                        color      = if (isUnknown) HmiFgDim else batteryColor,
+                        textAlign  = TextAlign.Center
+                    )
+                    if (!isUnknown) {
+                        Text(
+                            text      = "%",
+                            fontSize  = 18.sp,
+                            color     = batteryColor.copy(alpha = 0.6f),
+                            textAlign = TextAlign.Center
+                        )
+                    }
+                }
+            }
+
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                // Battery progress bar
+                if (battery != null) {
+                    LinearProgressIndicator(
+                        progress     = { (battery / 100f).coerceIn(0f, 1f) },
+                        modifier     = Modifier
+                            .fillMaxWidth()
+                            .height(6.dp)
+                            .clip(RoundedCornerShape(3.dp)),
+                        color        = batteryColor,
+                        trackColor   = HmiSurface2
+                    )
+                }
+                Row(
+                    verticalAlignment     = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(6.dp)
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .background(HmiSurface2, RoundedCornerShape(4.dp))
+                            .border(1.dp, HmiBorderStr, RoundedCornerShape(4.dp))
+                            .padding(horizontal = 8.dp, vertical = 3.dp)
+                    ) {
+                        Text(text = "somente leitura", fontSize = 10.sp, color = HmiFgDim)
+                    }
+                }
+            }
+        }
+    }
+}
+
+// ─────────────────────────────────────────────────────────────
 // Action log
 // ─────────────────────────────────────────────────────────────
 
@@ -618,7 +846,7 @@ fun ActionLog(modifier: Modifier = Modifier, entries: List<String>) {
                     Text(
                         text       = entry,
                         fontSize   = 11.sp,
-                        color      = HmiFgMuted,
+                        color      = if (entry.contains("[AUTO]")) HmiAccent.copy(alpha = 0.8f) else HmiFgMuted,
                         fontFamily = FontFamily.Monospace
                     )
                     HorizontalDivider(color = HmiBorder, thickness = 0.5.dp)
