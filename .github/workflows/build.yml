@@ -27,10 +27,11 @@ jobs:
       - name: Get version from build.gradle.kts
         id: get_version
         run: |
-          VERSION=$(grep 'versionName = ' app/build.gradle.kts | sed 's/.*versionName = "\(.*\)".*/\1/')
-          BUILD_NUMBER=$(grep 'versionCode = ' app/build.gradle.kts | sed 's/.*versionCode = \([0-9]*\).*/\1/')
+          VERSION=$(grep -oP 'versionName = "\K[^"]+' app/build.gradle.kts)
+          BUILD_NUMBER=$(grep -oP 'versionCode = \K[0-9]+' app/build.gradle.kts)
           echo "VERSION=$VERSION" >> $GITHUB_OUTPUT
           echo "BUILD_NUMBER=$BUILD_NUMBER" >> $GITHUB_OUTPUT
+          echo "Detected version: $VERSION (versionCode: $BUILD_NUMBER)"
 
       - name: Decode keystore
         run: |
@@ -45,12 +46,22 @@ jobs:
           chmod +x gradlew
           ./gradlew assembleRelease
 
-      - name: Create Release
-        uses: softprops/action-gh-release@v2
-        with:
-          tag_name: v${{ steps.get_version.outputs.VERSION }}
-          name: haval-ev-manager-${{ steps.get_version.outputs.VERSION }}
-          files: app/build/outputs/apk/release/app-release.apk
-          generate_release_notes: true
+      - name: Create git tag and GitHub Release
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          TAG="v${{ steps.get_version.outputs.VERSION }}"
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          # Create local tag (ignore error if it already exists)
+          git tag "$TAG" 2>/dev/null || echo "Tag $TAG already exists locally"
+          # Push tag to GitHub (ignore error if already pushed)
+          git push origin "$TAG" 2>/dev/null || echo "Tag $TAG already pushed"
+          # Create release, or just upload the APK if the release already exists
+          gh release create "$TAG" \
+            --title "haval-ev-manager-${{ steps.get_version.outputs.VERSION }}" \
+            --generate-notes \
+            app/build/outputs/apk/release/app-release.apk \
+          || gh release upload "$TAG" \
+               app/build/outputs/apk/release/app-release.apk \
+               --clobber
