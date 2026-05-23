@@ -22,6 +22,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Autorenew
 import androidx.compose.material.icons.filled.BatteryChargingFull
 import androidx.compose.material.icons.filled.BatteryFull
+import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.ElectricCar
 import androidx.compose.material.icons.filled.EnergySavingsLeaf
 import androidx.compose.material.icons.filled.Refresh
@@ -43,6 +44,7 @@ import androidx.core.content.FileProvider
 import br.com.redesurftank.havalevmanager.ui.theme.HavalEvManagerTheme
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import org.json.JSONObject
@@ -83,9 +85,24 @@ private val ValueColor2   = HmiAccent
 private val BatteryRed    = Color(0xFFEF4444)
 private val BatteryAmber  = Color(0xFFF59E0B)
 
+// Update button colors
+private val UpdateBlue    = Color(0xFF60A5FA)
+private val UpdateBlueBg  = Color(0x261565C0)
+
 private const val PROP_POWER_MODEL   = "car.ev_setting.power_model_config"
 private const val PROP_CHARGE_SOC    = "car.ev_setting.charge_soc_target_config"
 private const val PROP_POWER_RESERVE = "car.ev_setting.power_reserve_config"
+
+// ─────────────────────────────────────────────────────────────
+// Update state machine
+// ─────────────────────────────────────────────────────────────
+sealed class UpdateState {
+    object Idle                                                  : UpdateState()
+    object Checking                                              : UpdateState()
+    data class Available(val version: String, val url: String)  : UpdateState()
+    data class Downloading(val progress: Float, val version: String) : UpdateState()
+    object UpToDate                                              : UpdateState()
+}
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -111,21 +128,18 @@ fun MainScreen() {
     val state   = EvStateHolder
     val prefs   = remember { context.getSharedPreferences(UI_PREFS, Context.MODE_PRIVATE) }
 
-    var currentVersion   by remember { mutableStateOf("--") }
-    var isDownloading    by remember { mutableStateOf(false) }
-    var downloadProgress by remember { mutableFloatStateOf(0f) }
-    var updateAvailable  by remember { mutableStateOf(false) }
-    var latestVersion    by remember { mutableStateOf("") }
-    var downloadUrl      by remember { mutableStateOf("") }
-    var showErrDialog    by remember { mutableStateOf(false) }
-    var errDialogText    by remember { mutableStateOf("") }
-    var showPermDialog   by remember { mutableStateOf(false) }
-    var downloadJob      by remember { mutableStateOf<Job?>(null) }
+    var currentVersion by remember { mutableStateOf("--") }
+    var updateState    by remember { mutableStateOf<UpdateState>(UpdateState.Idle) }
+    var showErrDialog  by remember { mutableStateOf(false) }
+    var errDialogText  by remember { mutableStateOf("") }
+    var showPermDialog by remember { mutableStateOf(false) }
+    var downloadJob    by remember { mutableStateOf<Job?>(null) }
 
     val permLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.StartActivityForResult()
     ) { }
 
+    // On launch: resolve version + silent background update check (once per 24 h)
     LaunchedEffect(Unit) {
         try {
             currentVersion = context.packageManager
@@ -155,9 +169,7 @@ fun MainScreen() {
                         withContext(Dispatchers.Main) {
                             prefs.edit().putLong(KEY_LAST_UPDATE_CHECK, System.currentTimeMillis()).apply()
                             if (dlUrl != null && compareVersions(tag, currentVersion) > 0) {
-                                latestVersion   = tag
-                                downloadUrl     = dlUrl
-                                updateAvailable = true
+                                updateState = UpdateState.Available(tag, dlUrl)
                             }
                         }
                     }
@@ -165,6 +177,14 @@ fun MainScreen() {
                     Log.w(TAG, "Background update check failed: ${e.message}")
                 }
             }
+        }
+    }
+
+    // Auto-reset UpToDate → Idle after 2 s
+    LaunchedEffect(updateState) {
+        if (updateState is UpdateState.UpToDate) {
+            delay(2_000)
+            updateState = UpdateState.Idle
         }
     }
 
@@ -179,30 +199,73 @@ fun MainScreen() {
         })
     }
 
-    fun startDownload() {
-        isDownloading = true; downloadProgress = 0f
+    fun checkForUpdate() {
+        if (updateState !is UpdateState.Idle) return
+        updateState = UpdateState.Checking
+        scope.launch(Dispatchers.IO) {
+            try {
+                val conn = URL(GITHUB_RELEASES_API).openConnection() as HttpURLConnection
+                conn.requestMethod = "GET"
+                conn.setRequestProperty("Accept", "application/vnd.github.v3+json")
+                conn.connectTimeout = 10_000
+                conn.readTimeout    = 10_000
+                val next: UpdateState
+                if (conn.responseCode == 200) {
+                    val json   = JSONObject(conn.inputStream.bufferedReader().readText())
+                    val tag    = json.getString("tag_name")
+                    val assets = json.getJSONArray("assets")
+                    var dlUrl: String? = null
+                    for (i in 0 until assets.length()) {
+                        val a = assets.getJSONObject(i)
+                        if (a.getString("name").endsWith(".apk")) {
+                            dlUrl = a.getString("browser_download_url"); break
+                        }
+                    }
+                    next = if (dlUrl != null && compareVersions(tag, currentVersion) > 0)
+                        UpdateState.Available(tag, dlUrl)
+                    else
+                        UpdateState.UpToDate
+                } else {
+                    next = UpdateState.Idle
+                }
+                withContext(Dispatchers.Main) {
+                    prefs.edit().putLong(KEY_LAST_UPDATE_CHECK, System.currentTimeMillis()).apply()
+                    updateState = next
+                }
+            } catch (e: Exception) {
+                Log.w(TAG, "Update check failed: ${e.message}")
+                withContext(Dispatchers.Main) { updateState = UpdateState.Idle }
+            }
+        }
+    }
+
+    fun startDownload(url: String, version: String) {
+        updateState = UpdateState.Downloading(0f, version)
         downloadJob = scope.launch(Dispatchers.IO) {
             try {
                 val file  = File(context.getExternalFilesDir(null), "update.apk")
-                val conn  = URL(downloadUrl).openConnection() as HttpURLConnection
+                val conn  = URL(url).openConnection() as HttpURLConnection
                 val total = conn.contentLength
-                val buf   = ByteArray(4096)
+                val buf   = ByteArray(8192)
                 var bytes = 0; var read: Int
                 FileOutputStream(file).use { out ->
                     BufferedInputStream(conn.inputStream).use { inp ->
                         while (inp.read(buf).also { read = it } != -1) {
                             out.write(buf, 0, read); bytes += read
-                            if (total > 0) downloadProgress = bytes.toFloat() / total
+                            if (total > 0) withContext(Dispatchers.Main) {
+                                updateState = UpdateState.Downloading(bytes.toFloat() / total, version)
+                            }
                         }
                     }
                 }
                 withContext(Dispatchers.Main) {
-                    isDownloading = false; updateAvailable = false; installApk(file)
+                    updateState = UpdateState.Idle
+                    installApk(file)
                 }
             } catch (e: Exception) {
                 Log.e(TAG, "Download failed", e)
                 withContext(Dispatchers.Main) {
-                    isDownloading = false
+                    updateState = UpdateState.Idle
                     errDialogText = "Erro no download: ${e.message}"
                     showErrDialog = true
                 }
@@ -216,46 +279,23 @@ fun MainScreen() {
             .background(HmiBg)
             .padding(horizontal = 20.dp, vertical = 12.dp)
     ) {
-        HmiHeader(currentVersion = currentVersion, connected = state.vehicleConnected)
+        HmiHeader(
+            currentVersion = currentVersion,
+            connected      = state.vehicleConnected,
+            updateState    = updateState,
+            onCheckUpdate  = { checkForUpdate() },
+            onDownload     = { avail -> startDownload(avail.url, avail.version) }
+        )
 
         Spacer(Modifier.height(10.dp))
 
-        // Update banner — shown only when a new release is available
-        if (updateAvailable) {
-            Button(
-                onClick        = { startDownload() },
-                enabled        = !isDownloading,
-                modifier       = Modifier.fillMaxWidth(),
-                colors         = ButtonDefaults.buttonColors(containerColor = Color(0xFF1565C0)),
-                shape          = RoundedCornerShape(12.dp),
-                contentPadding = PaddingValues(14.dp)
-            ) {
-                if (isDownloading) {
-                    Column(modifier = Modifier.fillMaxWidth(), horizontalAlignment = Alignment.CenterHorizontally) {
-                        Text("Baixando $latestVersion… ${(downloadProgress * 100).toInt()}%", fontSize = 13.sp)
-                        Spacer(Modifier.height(6.dp))
-                        LinearProgressIndicator(
-                            progress = { downloadProgress },
-                            modifier = Modifier.fillMaxWidth(),
-                            color    = Color.White
-                        )
-                    }
-                } else {
-                    Icon(Icons.Default.Refresh, contentDescription = null, modifier = Modifier.size(18.dp))
-                    Spacer(Modifier.width(8.dp))
-                    Text("Atualizar para $latestVersion", fontSize = 14.sp, fontWeight = FontWeight.SemiBold)
-                }
-            }
-            Spacer(Modifier.height(10.dp))
-        }
-
         // Auto-cycle toggle — full width
         AutoToggleCard(
-            modifier         = Modifier.fillMaxWidth(),
-            autoEnabled      = state.autoEnabled,
-            connected        = state.vehicleConnected,
-            chargeSocTarget  = state.chargeSocTargetConfig,
-            batteryLevel     = state.batteryLevel
+            modifier        = Modifier.fillMaxWidth(),
+            autoEnabled     = state.autoEnabled,
+            connected       = state.vehicleConnected,
+            chargeSocTarget = state.chargeSocTargetConfig,
+            batteryLevel    = state.batteryLevel
         )
 
         Spacer(Modifier.height(10.dp))
@@ -306,10 +346,10 @@ fun MainScreen() {
     // Permission dialog
     if (showPermDialog) {
         AlertDialog(
-            onDismissRequest = { showPermDialog = false },
-            title            = { Text("Permissão necessária") },
-            text             = { Text("Permita a instalação de apps de fontes desconhecidas para instalar a atualização.") },
-            confirmButton    = {
+            onDismissRequest  = { showPermDialog = false },
+            title             = { Text("Permissão necessária") },
+            text              = { Text("Permita a instalação de apps de fontes desconhecidas para instalar a atualização.") },
+            confirmButton     = {
                 TextButton(onClick = {
                     showPermDialog = false
                     permLauncher.launch(
@@ -319,8 +359,8 @@ fun MainScreen() {
                     )
                 }) { Text("Abrir Configurações") }
             },
-            dismissButton    = { TextButton(onClick = { showPermDialog = false }) { Text("Cancelar") } },
-            containerColor   = Color(0xFF1E1E1E),
+            dismissButton     = { TextButton(onClick = { showPermDialog = false }) { Text("Cancelar") } },
+            containerColor    = Color(0xFF1E1E1E),
             titleContentColor = HmiFg,
             textContentColor  = HmiFgMuted
         )
@@ -329,11 +369,11 @@ fun MainScreen() {
     // Error dialog
     if (showErrDialog) {
         AlertDialog(
-            onDismissRequest = { showErrDialog = false },
-            title            = { Text("Erro") },
-            text             = { Text(errDialogText) },
-            confirmButton    = { TextButton(onClick = { showErrDialog = false }) { Text("OK") } },
-            containerColor   = Color(0xFF1E1E1E),
+            onDismissRequest  = { showErrDialog = false },
+            title             = { Text("Erro") },
+            text              = { Text(errDialogText) },
+            confirmButton     = { TextButton(onClick = { showErrDialog = false }) { Text("OK") } },
+            containerColor    = Color(0xFF1E1E1E),
             titleContentColor = HmiFg,
             textContentColor  = HmiFgMuted
         )
@@ -345,7 +385,13 @@ fun MainScreen() {
 // ─────────────────────────────────────────────────────────────
 
 @Composable
-fun HmiHeader(currentVersion: String, connected: Boolean) {
+fun HmiHeader(
+    currentVersion : String,
+    connected      : Boolean,
+    updateState    : UpdateState,
+    onCheckUpdate  : () -> Unit,
+    onDownload     : (UpdateState.Available) -> Unit
+) {
     Row(
         modifier              = Modifier.fillMaxWidth(),
         verticalAlignment     = Alignment.CenterVertically,
@@ -367,7 +413,7 @@ fun HmiHeader(currentVersion: String, connected: Boolean) {
         }
         Row(
             verticalAlignment     = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(16.dp)
+            horizontalArrangement = Arrangement.spacedBy(10.dp)
         ) {
             if (currentVersion != "--") {
                 Text(
@@ -376,7 +422,114 @@ fun HmiHeader(currentVersion: String, connected: Boolean) {
                     color    = HmiFgDim
                 )
             }
+            UpdateButton(
+                updateState = updateState,
+                onCheck     = onCheckUpdate,
+                onDownload  = onDownload
+            )
             StatusDot(connected = connected)
+        }
+    }
+}
+
+// ─────────────────────────────────────────────────────────────
+// Update button — compact widget that lives in the header
+// States: Idle → Checking → Available → Downloading → UpToDate → Idle
+// ─────────────────────────────────────────────────────────────
+
+@Composable
+fun UpdateButton(
+    updateState : UpdateState,
+    onCheck     : () -> Unit,
+    onDownload  : (UpdateState.Available) -> Unit
+) {
+    when (updateState) {
+        is UpdateState.Idle -> {
+            Box(
+                modifier = Modifier
+                    .size(26.dp)
+                    .clip(CircleShape)
+                    .background(HmiSurface2, CircleShape)
+                    .clickable { onCheck() },
+                contentAlignment = Alignment.Center
+            ) {
+                Icon(
+                    imageVector        = Icons.Default.Refresh,
+                    contentDescription = "Verificar atualização",
+                    tint               = HmiFgDim,
+                    modifier           = Modifier.size(15.dp)
+                )
+            }
+        }
+
+        is UpdateState.Checking -> {
+            Box(modifier = Modifier.size(26.dp), contentAlignment = Alignment.Center) {
+                CircularProgressIndicator(
+                    modifier    = Modifier.size(18.dp),
+                    color       = HmiFgMuted,
+                    strokeWidth = 2.dp
+                )
+            }
+        }
+
+        is UpdateState.Available -> {
+            Row(
+                modifier = Modifier
+                    .background(UpdateBlueBg, RoundedCornerShape(14.dp))
+                    .border(1.dp, UpdateBlue.copy(alpha = 0.55f), RoundedCornerShape(14.dp))
+                    .clip(RoundedCornerShape(14.dp))
+                    .clickable { onDownload(updateState) }
+                    .padding(horizontal = 9.dp, vertical = 4.dp),
+                verticalAlignment     = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(4.dp)
+            ) {
+                Icon(
+                    imageVector        = Icons.Default.Refresh,
+                    contentDescription = null,
+                    tint               = UpdateBlue,
+                    modifier           = Modifier.size(12.dp)
+                )
+                Text(
+                    text       = updateState.version.removePrefix("v"),
+                    fontSize   = 11.sp,
+                    fontWeight = FontWeight.SemiBold,
+                    color      = UpdateBlue
+                )
+            }
+        }
+
+        is UpdateState.Downloading -> {
+            Row(
+                modifier = Modifier
+                    .background(UpdateBlueBg, RoundedCornerShape(14.dp))
+                    .border(1.dp, UpdateBlue.copy(alpha = 0.55f), RoundedCornerShape(14.dp))
+                    .padding(horizontal = 9.dp, vertical = 5.dp),
+                verticalAlignment     = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(5.dp)
+            ) {
+                CircularProgressIndicator(
+                    progress    = { updateState.progress },
+                    modifier    = Modifier.size(13.dp),
+                    color       = UpdateBlue,
+                    strokeWidth = 2.dp
+                )
+                Text(
+                    text     = "${(updateState.progress * 100).toInt()}%",
+                    fontSize = 11.sp,
+                    color    = UpdateBlue
+                )
+            }
+        }
+
+        is UpdateState.UpToDate -> {
+            Box(modifier = Modifier.size(26.dp), contentAlignment = Alignment.Center) {
+                Icon(
+                    imageVector        = Icons.Default.Check,
+                    contentDescription = "Atualizado",
+                    tint               = HmiAccent,
+                    modifier           = Modifier.size(16.dp)
+                )
+            }
         }
     }
 }
@@ -427,17 +580,17 @@ fun AutoToggleCard(
 
     val battery = batteryLevel.toIntOrNull()
     val phaseText = when {
-        !connected       -> "Aguardando conexão com o veículo"
-        !autoEnabled     -> "Toque para ativar o ciclo automático de carga"
-        chargeSocTarget == "80" -> buildString {
+        !connected               -> "Aguardando conexão com o veículo"
+        !autoEnabled             -> "Toque para ativar o ciclo automático de carga"
+        chargeSocTarget == "80"  -> buildString {
             append("⬆  Carregando — aguardando bateria ≥ 75%")
             if (battery != null) append("  ·  bateria: $battery%")
         }
-        chargeSocTarget == "20" -> buildString {
+        chargeSocTarget == "20"  -> buildString {
             append("⬇  Descarregando — aguardando bateria ≤ 20%")
             if (battery != null) append("  ·  bateria: $battery%")
         }
-        else             -> "Aguardando leitura do SOC target…"
+        else                     -> "Aguardando leitura do SOC target…"
     }
 
     Box(
@@ -482,11 +635,11 @@ fun AutoToggleCard(
                 onCheckedChange = { if (connected) EvStateHolder.sendCommand("auto_enabled", it.toString()) },
                 enabled         = connected,
                 colors          = SwitchDefaults.colors(
-                    checkedThumbColor         = HmiBg,
-                    checkedTrackColor         = HmiAccent,
-                    uncheckedThumbColor       = HmiFgDim,
-                    uncheckedTrackColor       = HmiSurface2,
-                    disabledCheckedTrackColor = HmiAccent.copy(alpha = 0.38f),
+                    checkedThumbColor           = HmiBg,
+                    checkedTrackColor           = HmiAccent,
+                    uncheckedThumbColor         = HmiFgDim,
+                    uncheckedTrackColor         = HmiSurface2,
+                    disabledCheckedTrackColor   = HmiAccent.copy(alpha = 0.38f),
                     disabledUncheckedTrackColor = HmiSurface2.copy(alpha = 0.38f)
                 )
             )
@@ -526,9 +679,9 @@ fun EvCycleCard(
     }
 
     val borderColor = when {
-        locked                                         -> Color(0x1FF59E0B)  // amber tint when locked by auto
+        locked                                              -> Color(0x1FF59E0B)
         isClickable && currentInt != null && currentInt > 0 -> HmiAccentEdge
-        else                                           -> HmiBorder
+        else                                               -> HmiBorder
     }
 
     Box(
@@ -552,9 +705,9 @@ fun EvCycleCard(
                     imageVector        = icon,
                     contentDescription = null,
                     tint               = when {
-                        locked                                          -> BatteryAmber.copy(alpha = 0.6f)
+                        locked                                              -> BatteryAmber.copy(alpha = 0.6f)
                         isClickable && currentInt != null && currentInt > 0 -> HmiAccent
-                        else                                            -> HmiFgDim
+                        else                                               -> HmiFgDim
                     },
                     modifier           = Modifier.size(28.dp)
                 )
@@ -613,9 +766,8 @@ fun EvCycleCard(
                         }
                     }
                 }
-                // Footer hint
                 val footerText = when {
-                    locked     -> "Controlado pelo Auto"
+                    locked      -> "Controlado pelo Auto"
                     isClickable -> "Toque para alterar"
                     !connected  -> "Aguardando conexão"
                     else        -> "--"
@@ -776,16 +928,15 @@ fun BatteryCard(
             }
 
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                // Battery progress bar
                 if (battery != null) {
                     LinearProgressIndicator(
-                        progress     = { (battery / 100f).coerceIn(0f, 1f) },
-                        modifier     = Modifier
+                        progress   = { (battery / 100f).coerceIn(0f, 1f) },
+                        modifier   = Modifier
                             .fillMaxWidth()
                             .height(6.dp)
                             .clip(RoundedCornerShape(3.dp)),
-                        color        = batteryColor,
-                        trackColor   = HmiSurface2
+                        color      = batteryColor,
+                        trackColor = HmiSurface2
                     )
                 }
                 Row(
