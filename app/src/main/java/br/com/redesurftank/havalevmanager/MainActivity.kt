@@ -330,8 +330,9 @@ fun MainScreen() {
                 locked    = state.autoEnabled
             )
             BatteryCard(
-                modifier     = Modifier.weight(1f).fillMaxHeight(),
-                batteryLevel = state.batteryLevel
+                modifier       = Modifier.weight(1f).fillMaxHeight(),
+                batteryLevel   = state.batteryLevel,
+                remainOdometer = state.remainOdometer
             )
         }
 
@@ -858,8 +859,9 @@ fun EvReadOnlyCard(
 
 @Composable
 fun BatteryCard(
-    modifier     : Modifier = Modifier,
-    batteryLevel : String
+    modifier       : Modifier = Modifier,
+    batteryLevel   : String,
+    remainOdometer : String = "--"
 ) {
     val isUnknown = batteryLevel == "--"
     val battery   = batteryLevel.toIntOrNull()
@@ -889,7 +891,7 @@ fun BatteryCard(
                     modifier           = Modifier.size(28.dp)
                 )
                 Text(
-                    text       = "battery_charge_percentage",
+                    text       = "cur_battery_power_percentage",
                     fontSize   = 11.sp,
                     color      = HmiFgMuted,
                     fontFamily = FontFamily.Monospace
@@ -939,18 +941,30 @@ fun BatteryCard(
                         trackColor = HmiSurface2
                     )
                 }
+                // Remaining range
                 Row(
                     verticalAlignment     = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.spacedBy(6.dp)
                 ) {
-                    Box(
-                        modifier = Modifier
-                            .background(HmiSurface2, RoundedCornerShape(4.dp))
-                            .border(1.dp, HmiBorderStr, RoundedCornerShape(4.dp))
-                            .padding(horizontal = 8.dp, vertical = 3.dp)
-                    ) {
-                        Text(text = "somente leitura", fontSize = 10.sp, color = HmiFgDim)
-                    }
+                    Text(
+                        text     = if (remainOdometer == "--") "-- km" else "$remainOdometer km",
+                        fontSize = 13.sp,
+                        fontWeight = FontWeight.SemiBold,
+                        color    = if (remainOdometer == "--") HmiFgDim else batteryColor
+                    )
+                    Text(
+                        text     = "restantes",
+                        fontSize = 10.sp,
+                        color    = HmiFgDim
+                    )
+                }
+                Box(
+                    modifier = Modifier
+                        .background(HmiSurface2, RoundedCornerShape(4.dp))
+                        .border(1.dp, HmiBorderStr, RoundedCornerShape(4.dp))
+                        .padding(horizontal = 8.dp, vertical = 3.dp)
+                ) {
+                    Text(text = "somente leitura", fontSize = 10.sp, color = HmiFgDim)
                 }
             }
         }

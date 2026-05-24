@@ -34,13 +34,14 @@ Before every commit+push, increment the version in `app/build.gradle.kts`:
 | `car.ev_setting.power_model_config` | Clicável — cicla 0→1→2→0 (bloqueado quando Auto ativo) |
 | `car.ev_setting.charge_soc_target_config` | Somente leitura (gerenciado pelo Auto quando ativo) |
 | `car.ev_setting.power_reserve_config` | Clicável — cicla 0→1→2→0 (bloqueado quando Auto ativo) |
-| `car.ev_info.battery_charge_percentage` | Somente leitura — % da bateria (usado pelo ciclo automático) |
+| `car.ev_info.cur_battery_power_percentage` | Somente leitura — % da bateria (usado pelo ciclo automático) |
+| `car.ev_info.electric_mode_remain_odometer` | Somente leitura — km restantes no modo elétrico (informativo no BatteryCard) |
 
 ## Ciclo automático (AutoToggleCard)
 
 Quando ativado:
 - Define `power_model_config = 0` (HEV) e `power_reserve_config = 0` (reserva prioritária)
-- Cicla `charge_soc_target_config` entre 80 e 20 baseado em `battery_charge_percentage`:
+- Cicla `charge_soc_target_config` entre 80 e 20 baseado em `cur_battery_power_percentage`:
   - Fase carregando (`lastSocTarget = 80`): aguarda bateria ≥ 75% → seta SOC = 20
   - Fase descarregando (`lastSocTarget = 20`): aguarda bateria ≤ 20% → seta SOC = 80
 - Persiste `auto_enabled` e `last_soc_target` em SharedPreferences (sobrevive reinício)
