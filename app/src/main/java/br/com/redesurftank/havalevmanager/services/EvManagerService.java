@@ -60,7 +60,7 @@ public class EvManagerService extends Service implements Shizuku.OnBinderDeadLis
     private static final String PROP_POWER_MODEL_CONFIG       = "car.ev_setting.power_model_config";
     private static final String PROP_CHARGE_SOC_TARGET_CONFIG = "car.ev_setting.charge_soc_target_config";
     private static final String PROP_POWER_RESERVE_CONFIG     = "car.ev_setting.power_reserve_config";
-    private static final String PROP_BATTERY_CURRENT          = "car.ev_info.power_battery_current";
+    private static final String PROP_BATTERY_CURRENT          = "car.ev_info.battery_charge_percentage";
 
     private static final String[] ALL_PROPS = {
         PROP_POWER_MODEL_CONFIG,
@@ -495,7 +495,7 @@ public class EvManagerService extends Service implements Shizuku.OnBinderDeadLis
             case PROP_POWER_MODEL_CONFIG:       return "power_model_config";
             case PROP_CHARGE_SOC_TARGET_CONFIG: return "charge_soc_target_config";
             case PROP_POWER_RESERVE_CONFIG:     return "power_reserve_config";
-            case PROP_BATTERY_CURRENT:          return "power_battery_current";
+            case PROP_BATTERY_CURRENT:          return "battery_charge_percentage";
             default:                            return key;
         }
     }

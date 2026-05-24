@@ -889,7 +889,7 @@ fun BatteryCard(
                     modifier           = Modifier.size(28.dp)
                 )
                 Text(
-                    text       = "power_battery_current",
+                    text       = "battery_charge_percentage",
                     fontSize   = 11.sp,
                     color      = HmiFgMuted,
                     fontFamily = FontFamily.Monospace
