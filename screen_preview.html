@@ -1,0 +1,917 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8" />
+<title>Haval EV Manager — Preview v1.5.0</title>
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600;700;900&family=Geist+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+:root {
+  --bg:           #000000;
+  --surface:      #141414;
+  --surface-2:    #1c1c1c;
+  --border:       rgba(255,255,255,0.07);
+  --border-str:   rgba(255,255,255,0.12);
+  --fg:           #fafafa;
+  --fg-muted:     #a3a3a3;
+  --fg-dim:       #6b6b6b;
+  --accent:       #22c55e;
+  --accent-soft:  rgba(34,197,94,0.12);
+  --accent-edge:  rgba(34,197,94,0.40);
+  --blue:         #60a5fa;
+  --blue-hev:     #3b82f6;
+  --blue-hev-soft:rgba(59,130,246,0.12);
+  --blue-hev-edge:rgba(59,130,246,0.40);
+  --red:          #ef4444;
+  --amber:        #f59e0b;
+  --amber-border: rgba(245,158,11,0.12);
+  --r-sm:  10px;
+  --r:     18px;
+  --r-lg:  22px;
+  --font:  "Geist","Inter",system-ui,sans-serif;
+  --mono:  "Geist Mono","JetBrains Mono",ui-monospace,monospace;
+}
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+body{background:#111;font-family:var(--font);color:var(--fg);
+     display:flex;flex-direction:column;align-items:center;gap:48px;padding:40px 24px 60px;}
+
+/* ── scene ── */
+.scene-label{font-size:11px;letter-spacing:2px;text-transform:uppercase;color:var(--fg-dim);margin-bottom:-36px;}
+.scene{position:relative;transform-origin:top left;}
+.screen{
+  width:1792px;height:660px;background:var(--bg);border-radius:6px;overflow:hidden;
+  display:flex;flex-direction:column;padding:12px 20px;gap:0;
+  transform-origin:top left;position:relative;
+}
+
+/* ── header ── */
+.header{display:flex;justify-content:space-between;align-items:center;flex-shrink:0;height:50px;}
+.header-left h1{font-size:18px;font-weight:700;letter-spacing:3px;color:var(--fg);}
+.header-left p{font-size:11px;color:var(--fg-dim);margin-top:2px;}
+.header-right{display:flex;align-items:center;gap:10px;}
+.version{font-size:11px;color:var(--fg-dim);}
+
+/* update button states */
+.upd-idle{
+  width:26px;height:26px;border-radius:50%;background:var(--surface-2);
+  display:flex;align-items:center;justify-content:center;cursor:pointer;
+}
+.upd-idle svg{width:15px;height:15px;}
+.upd-available{
+  display:flex;align-items:center;gap:4px;
+  background:rgba(21,101,192,.15);border:1px solid rgba(96,165,250,.55);
+  border-radius:14px;padding:4px 9px;cursor:pointer;
+}
+.upd-available svg{width:12px;height:12px;}
+.upd-available span{font-size:11px;font-weight:600;color:var(--blue);}
+.upd-uptodate{width:26px;height:26px;display:flex;align-items:center;justify-content:center;}
+.upd-uptodate svg{width:16px;height:16px;}
+
+/* status dot */
+.dot-wrap{display:flex;align-items:center;gap:6px;}
+.dot{width:8px;height:8px;border-radius:50%;}
+.dot-label{font-size:11px;}
+.dot.on{background:var(--accent);}  .dot-label.on{color:var(--accent);}
+.dot.off{background:#555;}          .dot-label.off{color:#555;}
+
+/* ── spacers ── */
+.sp{flex-shrink:0;}
+.sp10{height:10px;}
+.sp12{height:12px;}
+
+/* ── auto toggles row ── */
+.auto-row{display:flex;gap:16px;flex-shrink:0;}
+.auto-row .auto-card{flex:1;}
+
+.auto-card{
+  border-radius:var(--r);border:1px solid var(--border);
+  padding:14px 24px;display:flex;align-items:center;justify-content:space-between;
+}
+.auto-card.ciclo.on{
+  background:linear-gradient(to right,rgba(34,197,94,.12),transparent);
+  border-color:var(--accent-edge);
+}
+.auto-card.hev.on{
+  background:linear-gradient(to right,rgba(59,130,246,.12),transparent);
+  border-color:var(--blue-hev-edge);
+}
+.auto-card.off{background:transparent;}
+
+.auto-left{display:flex;align-items:center;gap:14px;flex:1;}
+.auto-icon{width:24px;height:24px;display:flex;align-items:center;justify-content:center;}
+.auto-icon svg{width:24px;height:24px;}
+.auto-texts{display:flex;flex-direction:column;gap:3px;}
+.auto-title{font-size:12px;font-weight:700;letter-spacing:1.5px;}
+.auto-title.ciclo-on{color:var(--accent);}
+.auto-title.hev-on{color:var(--blue-hev);}
+.auto-title.off-lbl{color:var(--fg-muted);}
+.auto-phase{font-size:11px;color:var(--fg-dim);}
+
+/* switch */
+.switch-wrap{position:relative;width:51px;height:31px;flex-shrink:0;}
+.switch-track{width:51px;height:31px;border-radius:16px;}
+.switch-track.ciclo-on{background:var(--accent);}
+.switch-track.hev-on{background:var(--blue-hev);}
+.switch-track.sw-off{background:var(--surface-2);border:1px solid var(--border-str);}
+.switch-thumb{position:absolute;top:3px;width:25px;height:25px;border-radius:50%;box-shadow:0 1px 4px rgba(0,0,0,.5);}
+.switch-thumb.sw-on{left:23px;background:#000;}
+.switch-thumb.sw-off{left:3px;background:var(--fg-dim);}
+
+/* ── cards row ── */
+.cards{display:flex;gap:16px;flex:1;min-height:0;}
+.card{
+  flex:1;border-radius:var(--r-lg);border:1px solid var(--border);background:var(--surface);
+  padding:22px;display:flex;flex-direction:column;justify-content:space-between;overflow:hidden;
+}
+.card.active-0{background:var(--surface);border-color:var(--border);}
+.card.active-pos{background:linear-gradient(to bottom,rgba(34,197,94,.12),transparent);border-color:var(--accent-edge);}
+.card.locked{background:var(--surface);border-color:var(--amber-border);}
+.card.engine-on-card{border-color:var(--accent-edge);}
+
+.card-top{display:flex;flex-direction:column;gap:6px;}
+.card-icon svg{width:28px;height:28px;}
+.card-label{font-size:11px;font-family:var(--mono);color:var(--fg-muted);}
+.card-ns{font-size:10px;color:var(--fg-dim);}
+
+.card-value-area{display:flex;align-items:center;justify-content:center;flex:1;}
+.cv-col{display:flex;flex-direction:column;align-items:center;}
+.card-value{font-size:72px;font-weight:900;text-align:center;line-height:1;}
+.card-value.dim{font-size:64px;color:var(--fg-dim);}
+.card-value.v0{color:var(--fg-dim);}
+.card-value.v1{color:var(--blue);}
+.card-value.v2{color:var(--accent);}
+.card-value.readonly{color:var(--blue);}
+.card-value.bat-red{color:var(--red);}
+.card-value.bat-amber{color:var(--amber);}
+.card-value.bat-green{color:var(--accent);}
+.card-value.odo{font-size:56px;color:var(--fg-muted);}
+.card-value.eng-on{color:var(--accent);}
+.card-value.eng-off{color:var(--fg-dim);}
+
+.pct{font-size:18px;font-weight:600;display:block;text-align:center;margin-top:2px;}
+.pct.bat-red{color:rgba(239,68,68,.6);}
+.pct.bat-amber{color:rgba(245,158,11,.6);}
+.pct.bat-green{color:rgba(34,197,94,.6);}
+
+.km-unit{font-size:16px;color:var(--fg-dim);text-align:center;display:block;margin-top:2px;}
+.eng-lbl{font-size:12px;text-align:center;display:block;margin-top:2px;}
+.eng-lbl.on{color:rgba(34,197,94,.7);}
+.eng-lbl.off{color:var(--fg-dim);}
+
+/* chips */
+.card-bottom{display:flex;flex-direction:column;gap:8px;}
+.chips{display:flex;gap:8px;}
+.chip{padding:4px 12px;border-radius:6px;font-size:13px;border:1px solid var(--border);color:var(--fg-dim);font-family:var(--mono);}
+.chip.sel-0{border-color:var(--fg-dim);background:rgba(107,107,107,.15);color:var(--fg-dim);font-weight:700;}
+.chip.sel-1{border-color:var(--blue);background:rgba(96,165,250,.15);color:var(--blue);font-weight:700;}
+.chip.sel-2{border-color:var(--accent);background:rgba(34,197,94,.15);color:var(--accent);font-weight:700;}
+
+.card-hint{font-size:10px;color:var(--fg-dim);}
+.card-hint.locked-hint{color:rgba(245,158,11,.6);}
+
+.badge{
+  display:inline-flex;padding:3px 8px;border-radius:4px;
+  background:var(--surface-2);border:1px solid var(--border-str);
+  font-size:10px;color:var(--fg-dim);
+}
+
+/* battery bar */
+.bat-bar-wrap{height:6px;background:var(--surface-2);border-radius:3px;overflow:hidden;}
+.bat-bar{height:100%;border-radius:3px;}
+.bat-bar.bat-red{background:var(--red);}
+.bat-bar.bat-amber{background:var(--amber);}
+.bat-bar.bat-green{background:var(--accent);}
+
+/* remain km row inside battery card */
+.remain-km{display:flex;align-items:baseline;gap:6px;margin-top:2px;}
+.remain-km-val{font-size:13px;font-weight:600;}
+.remain-km-lbl{font-size:10px;color:var(--fg-dim);}
+
+/* last-change text in engine card */
+.last-change{font-size:10px;color:var(--fg-dim);font-family:var(--mono);}
+
+/* ── log ── */
+.log{flex-shrink:0;height:85px;display:flex;flex-direction:column;gap:4px;}
+.log-title{font-size:11px;font-weight:600;color:var(--fg-muted);}
+.log-body{
+  flex:1;background:var(--surface);border-radius:var(--r-sm);
+  padding:6px 12px;overflow:hidden;display:flex;flex-direction:column;gap:3px;
+}
+.log-row{font-size:11px;font-family:var(--mono);color:var(--fg-muted);
+         border-bottom:.5px solid var(--border);padding-bottom:3px;}
+.log-row.auto{color:rgba(34,197,94,.8);}
+.log-row:last-child{border-bottom:none;}
+</style>
+</head>
+<body>
+
+<script>
+function applyScale() {
+  const W = 1792, H = 660;
+  const vw = Math.min(window.innerWidth - 48, 1792);
+  const scale = vw / W;
+  document.querySelectorAll('.scene').forEach(el => {
+    el.style.width  = (W * scale) + 'px';
+    el.style.height = (H * scale) + 'px';
+  });
+  document.querySelectorAll('.screen').forEach(el => {
+    el.style.transform = `scale(${scale})`;
+  });
+}
+window.addEventListener('load', applyScale);
+window.addEventListener('resize', applyScale);
+</script>
+
+<!-- SVG SYMBOLS (reusable) -->
+<svg style="display:none">
+  <symbol id="ico-car" viewBox="0 0 24 24" fill="none" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+    <rect x="1" y="3" width="15" height="13" rx="2"/>
+    <path d="M16 8h2l2 2 1 3H17"/>
+    <circle cx="5.5" cy="18.5" r="2.5"/>
+    <circle cx="18.5" cy="18.5" r="2.5"/>
+  </symbol>
+  <symbol id="ico-bat-charge" viewBox="0 0 24 24" fill="none" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+    <rect x="2" y="7" width="16" height="11" rx="2"/>
+    <path d="M18 11h2a1 1 0 0 1 1 1v2a1 1 0 0 1-1 1h-2"/>
+    <path d="M6 11v6"/><path d="M10 11v6"/>
+  </symbol>
+  <symbol id="ico-leaf" viewBox="0 0 24 24" fill="none" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M11 20A7 7 0 0 1 9.8 6.1C15.5 5 17 4.48 19 2c1 2 2 4.18 2 8 0 5.5-4.78 10-10 10Z"/>
+    <path d="M2 21c0-3 1.85-5.36 5.08-6C9.5 14.52 12 13 13 12"/>
+  </symbol>
+  <symbol id="ico-bat-full" viewBox="0 0 24 24" fill="none" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+    <rect x="2" y="7" width="16" height="11" rx="2"/>
+    <path d="M18 11h2a1 1 0 0 1 1 1v2a1 1 0 0 1-1 1h-2"/>
+  </symbol>
+  <symbol id="ico-route" viewBox="0 0 24 24" fill="none" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+    <circle cx="6" cy="19" r="3"/>
+    <path d="M9 19h8.5a3.5 3.5 0 0 0 0-7h-11a3.5 3.5 0 0 1 0-7H15"/>
+    <circle cx="18" cy="5" r="3"/>
+  </symbol>
+  <symbol id="ico-power" viewBox="0 0 24 24" fill="none" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M18.36 6.64a9 9 0 1 1-12.73 0"/>
+    <line x1="12" y1="2" x2="12" y2="12"/>
+  </symbol>
+  <symbol id="ico-autorenew" viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8"/>
+    <path d="M21 3v5h-5"/>
+    <path d="M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16"/>
+    <path d="M8 16H3v5"/>
+  </symbol>
+  <symbol id="ico-loop" viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M17 2l4 4-4 4"/>
+    <path d="M3 11V9a4 4 0 0 1 4-4h14"/>
+    <path d="M7 22l-4-4 4-4"/>
+    <path d="M21 13v2a4 4 0 0 1-4 4H3"/>
+  </symbol>
+  <symbol id="ico-refresh" viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8"/>
+    <path d="M21 3v5h-5"/>
+    <path d="M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16"/>
+    <path d="M8 16H3v5"/>
+  </symbol>
+  <symbol id="ico-check" viewBox="0 0 24 24" fill="none" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+    <polyline points="20 6 9 17 4 12"/>
+  </symbol>
+</svg>
+
+
+<!-- ═══════════════════════════════════════════════════
+     ESTADO 1 — Desconectado
+═══════════════════════════════════════════════════ -->
+<p class="scene-label">Estado 1 — Desconectado</p>
+<div class="scene"><div class="screen">
+
+  <div class="header">
+    <div class="header-left">
+      <h1>EV MANAGER</h1>
+      <p>Controle de combustível em viagem</p>
+    </div>
+    <div class="header-right">
+      <span class="version">v1.5.0</span>
+      <!-- update btn: idle -->
+      <div class="upd-idle">
+        <svg><use href="#ico-refresh" stroke="#6b6b6b"/></svg>
+      </div>
+      <div class="dot-wrap">
+        <div class="dot off"></div>
+        <span class="dot-label off">Desconectado</span>
+      </div>
+    </div>
+  </div>
+
+  <div class="sp sp10"></div>
+
+  <div class="auto-row">
+    <!-- ciclo auto OFF -->
+    <div class="auto-card ciclo off">
+      <div class="auto-left">
+        <div class="auto-icon"><svg><use href="#ico-autorenew" stroke="#6b6b6b"/></svg></div>
+        <div class="auto-texts">
+          <div class="auto-title off-lbl">CICLO AUTOMÁTICO</div>
+          <div class="auto-phase">Aguardando conexão com o veículo</div>
+        </div>
+      </div>
+      <div class="switch-wrap">
+        <div class="switch-track sw-off"></div>
+        <div class="switch-thumb sw-off"></div>
+      </div>
+    </div>
+    <!-- auto hev OFF -->
+    <div class="auto-card hev off">
+      <div class="auto-left">
+        <div class="auto-icon"><svg><use href="#ico-loop" stroke="#6b6b6b"/></svg></div>
+        <div class="auto-texts">
+          <div class="auto-title off-lbl">AUTO HEV</div>
+          <div class="auto-phase">Aguardando conexão com o veículo</div>
+        </div>
+      </div>
+      <div class="switch-wrap">
+        <div class="switch-track sw-off"></div>
+        <div class="switch-thumb sw-off"></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="sp sp10"></div>
+
+  <div class="cards">
+    <!-- power_model_config -->
+    <div class="card active-0">
+      <div class="card-top">
+        <div class="card-icon"><svg><use href="#ico-car" stroke="#6b6b6b"/></svg></div>
+        <div class="card-label">power_model_config</div>
+        <div class="card-ns">car.ev_setting</div>
+      </div>
+      <div class="card-value-area"><span class="card-value dim">--</span></div>
+      <div class="card-bottom">
+        <div class="chips"><div class="chip">0</div><div class="chip">1</div><div class="chip">2</div></div>
+        <div class="card-hint">Aguardando conexão</div>
+      </div>
+    </div>
+    <!-- charge_soc_target -->
+    <div class="card">
+      <div class="card-top">
+        <div class="card-icon"><svg><use href="#ico-bat-charge" stroke="#6b6b6b"/></svg></div>
+        <div class="card-label">charge_soc_target_config</div>
+        <div class="card-ns">car.ev_setting</div>
+      </div>
+      <div class="card-value-area"><span class="card-value dim">--</span></div>
+      <div class="card-bottom"><div class="badge">somente leitura</div></div>
+    </div>
+    <!-- power_reserve -->
+    <div class="card active-0">
+      <div class="card-top">
+        <div class="card-icon"><svg><use href="#ico-leaf" stroke="#6b6b6b"/></svg></div>
+        <div class="card-label">power_reserve_config</div>
+        <div class="card-ns">car.ev_setting</div>
+      </div>
+      <div class="card-value-area"><span class="card-value dim">--</span></div>
+      <div class="card-bottom">
+        <div class="chips"><div class="chip">0</div><div class="chip">1</div><div class="chip">2</div></div>
+        <div class="card-hint">Aguardando conexão</div>
+      </div>
+    </div>
+    <!-- battery -->
+    <div class="card">
+      <div class="card-top">
+        <div class="card-icon"><svg><use href="#ico-bat-full" stroke="#6b6b6b"/></svg></div>
+        <div class="card-label">cur_battery_power_percentage</div>
+        <div class="card-ns">car.ev_info</div>
+      </div>
+      <div class="card-value-area"><span class="card-value dim">--</span></div>
+      <div class="card-bottom">
+        <div class="badge">somente leitura</div>
+      </div>
+    </div>
+    <!-- basic odo -->
+    <div class="card">
+      <div class="card-top">
+        <div class="card-icon"><svg><use href="#ico-route" stroke="#6b6b6b"/></svg></div>
+        <div class="card-label">remain_odometer</div>
+        <div class="card-ns">car.basic</div>
+      </div>
+      <div class="card-value-area"><span class="card-value dim">--</span></div>
+      <div class="card-bottom"><div class="badge">somente leitura</div></div>
+    </div>
+    <!-- engine state -->
+    <div class="card">
+      <div class="card-top">
+        <div class="card-icon"><svg><use href="#ico-power" stroke="#6b6b6b"/></svg></div>
+        <div class="card-label">engine_state</div>
+        <div class="card-ns">car.basic</div>
+      </div>
+      <div class="card-value-area"><span class="card-value dim">--</span></div>
+      <div class="card-bottom"><div class="badge">somente leitura</div></div>
+    </div>
+  </div>
+
+  <div class="sp sp12"></div>
+  <div class="log">
+    <div class="log-title">Histórico de Ações</div>
+    <div class="log-body" style="justify-content:center;align-items:center;">
+      <span style="font-size:12px;color:var(--fg-dim);font-family:var(--mono);">Nenhum comando enviado ainda.</span>
+    </div>
+  </div>
+
+</div></div>
+
+
+<!-- ═══════════════════════════════════════════════════
+     ESTADO 2 — Conectado · ambos Auto OFF · bat 62% · motor ligado
+═══════════════════════════════════════════════════ -->
+<p class="scene-label">Estado 2 — Conectado · Auto OFF · Auto HEV OFF · bat 62% · motor ligado</p>
+<div class="scene"><div class="screen">
+
+  <div class="header">
+    <div class="header-left">
+      <h1>EV MANAGER</h1>
+      <p>Controle de combustível em viagem</p>
+    </div>
+    <div class="header-right">
+      <span class="version">v1.5.0</span>
+      <!-- update btn: available -->
+      <div class="upd-available">
+        <svg><use href="#ico-refresh" stroke="#60a5fa"/></svg>
+        <span>1.5.1</span>
+      </div>
+      <div class="dot-wrap">
+        <div class="dot on"></div>
+        <span class="dot-label on">Conectado</span>
+      </div>
+    </div>
+  </div>
+
+  <div class="sp sp10"></div>
+
+  <div class="auto-row">
+    <div class="auto-card ciclo off">
+      <div class="auto-left">
+        <div class="auto-icon"><svg><use href="#ico-autorenew" stroke="#6b6b6b"/></svg></div>
+        <div class="auto-texts">
+          <div class="auto-title off-lbl">CICLO AUTOMÁTICO</div>
+          <div class="auto-phase">Toque para ativar o ciclo automático de carga</div>
+        </div>
+      </div>
+      <div class="switch-wrap">
+        <div class="switch-track sw-off"></div>
+        <div class="switch-thumb sw-off"></div>
+      </div>
+    </div>
+    <div class="auto-card hev off">
+      <div class="auto-left">
+        <div class="auto-icon"><svg><use href="#ico-loop" stroke="#6b6b6b"/></svg></div>
+        <div class="auto-texts">
+          <div class="auto-title off-lbl">AUTO HEV</div>
+          <div class="auto-phase">Ativar ciclo de recuperação HEV (24h)</div>
+        </div>
+      </div>
+      <div class="switch-wrap">
+        <div class="switch-track sw-off"></div>
+        <div class="switch-thumb sw-off"></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="sp sp10"></div>
+
+  <div class="cards">
+    <!-- power_model = 0 -->
+    <div class="card active-0">
+      <div class="card-top">
+        <div class="card-icon"><svg><use href="#ico-car" stroke="#6b6b6b"/></svg></div>
+        <div class="card-label">power_model_config</div>
+        <div class="card-ns">car.ev_setting</div>
+      </div>
+      <div class="card-value-area"><span class="card-value v0">0</span></div>
+      <div class="card-bottom">
+        <div class="chips"><div class="chip sel-0">0</div><div class="chip">1</div><div class="chip">2</div></div>
+        <div class="card-hint">Toque para alterar</div>
+      </div>
+    </div>
+    <!-- soc target = 80 -->
+    <div class="card">
+      <div class="card-top">
+        <div class="card-icon"><svg><use href="#ico-bat-charge" stroke="#6b6b6b"/></svg></div>
+        <div class="card-label">charge_soc_target_config</div>
+        <div class="card-ns">car.ev_setting</div>
+      </div>
+      <div class="card-value-area"><span class="card-value readonly">80</span></div>
+      <div class="card-bottom"><div class="badge">somente leitura</div></div>
+    </div>
+    <!-- power_reserve = 1 -->
+    <div class="card active-pos">
+      <div class="card-top">
+        <div class="card-icon"><svg><use href="#ico-leaf" stroke="#22c55e"/></svg></div>
+        <div class="card-label">power_reserve_config</div>
+        <div class="card-ns">car.ev_setting</div>
+      </div>
+      <div class="card-value-area"><span class="card-value v1">1</span></div>
+      <div class="card-bottom">
+        <div class="chips"><div class="chip">0</div><div class="chip sel-1">1</div><div class="chip">2</div></div>
+        <div class="card-hint">Toque para alterar</div>
+      </div>
+    </div>
+    <!-- battery 62% amber + EV km -->
+    <div class="card">
+      <div class="card-top">
+        <div class="card-icon"><svg><use href="#ico-bat-full" stroke="#f59e0b"/></svg></div>
+        <div class="card-label">cur_battery_power_percentage</div>
+        <div class="card-ns">car.ev_info</div>
+      </div>
+      <div class="card-value-area">
+        <div class="cv-col">
+          <span class="card-value bat-amber">62</span>
+          <span class="pct bat-amber">%</span>
+        </div>
+      </div>
+      <div class="card-bottom">
+        <div class="bat-bar-wrap"><div class="bat-bar bat-amber" style="width:62%"></div></div>
+        <div class="remain-km">
+          <span class="remain-km-val bat-amber">42 km</span>
+          <span class="remain-km-lbl">restantes</span>
+        </div>
+        <div class="badge">somente leitura</div>
+      </div>
+    </div>
+    <!-- basic odo 420 km -->
+    <div class="card">
+      <div class="card-top">
+        <div class="card-icon"><svg><use href="#ico-route" stroke="#6b6b6b"/></svg></div>
+        <div class="card-label">remain_odometer</div>
+        <div class="card-ns">car.basic</div>
+      </div>
+      <div class="card-value-area">
+        <div class="cv-col">
+          <span class="card-value odo">420</span>
+          <span class="km-unit">km</span>
+        </div>
+      </div>
+      <div class="card-bottom"><div class="badge">somente leitura</div></div>
+    </div>
+    <!-- engine state = 1 ligado -->
+    <div class="card engine-on-card">
+      <div class="card-top">
+        <div class="card-icon"><svg><use href="#ico-power" stroke="#22c55e"/></svg></div>
+        <div class="card-label">engine_state</div>
+        <div class="card-ns">car.basic</div>
+      </div>
+      <div class="card-value-area">
+        <div class="cv-col">
+          <span class="card-value eng-on">1</span>
+          <span class="eng-lbl on">Ligado</span>
+        </div>
+      </div>
+      <div class="card-bottom">
+        <div class="last-change">mudança: 26/05 08:30</div>
+        <div class="badge">somente leitura</div>
+      </div>
+    </div>
+  </div>
+
+  <div class="sp sp12"></div>
+  <div class="log">
+    <div class="log-title">Histórico de Ações</div>
+    <div class="log-body">
+      <div class="log-row">14:22:31  power_reserve_config → 1</div>
+      <div class="log-row">14:21:55  power_model_config → 0</div>
+    </div>
+  </div>
+
+</div></div>
+
+
+<!-- ═══════════════════════════════════════════════════
+     ESTADO 3 — Auto Ciclo ON + Auto HEV ON · carregando · bat 45%
+═══════════════════════════════════════════════════ -->
+<p class="scene-label">Estado 3 — Auto Ciclo ON · Auto HEV ON · carregando · bat 45% · motor ligado</p>
+<div class="scene"><div class="screen">
+
+  <div class="header">
+    <div class="header-left">
+      <h1>EV MANAGER</h1>
+      <p>Controle de combustível em viagem</p>
+    </div>
+    <div class="header-right">
+      <span class="version">v1.5.0</span>
+      <div class="upd-idle">
+        <svg><use href="#ico-refresh" stroke="#6b6b6b"/></svg>
+      </div>
+      <div class="dot-wrap">
+        <div class="dot on"></div>
+        <span class="dot-label on">Conectado</span>
+      </div>
+    </div>
+  </div>
+
+  <div class="sp sp10"></div>
+
+  <div class="auto-row">
+    <!-- ciclo ON -->
+    <div class="auto-card ciclo on">
+      <div class="auto-left">
+        <div class="auto-icon"><svg><use href="#ico-autorenew" stroke="#22c55e"/></svg></div>
+        <div class="auto-texts">
+          <div class="auto-title ciclo-on">CICLO AUTOMÁTICO</div>
+          <div class="auto-phase">⬆  Carregando — aguardando bateria ≥ 75%  ·  bateria: 45%</div>
+        </div>
+      </div>
+      <div class="switch-wrap">
+        <div class="switch-track ciclo-on"></div>
+        <div class="switch-thumb sw-on"></div>
+      </div>
+    </div>
+    <!-- hev ON -->
+    <div class="auto-card hev on">
+      <div class="auto-left">
+        <div class="auto-icon"><svg><use href="#ico-loop" stroke="#3b82f6"/></svg></div>
+        <div class="auto-texts">
+          <div class="auto-title hev-on">AUTO HEV</div>
+          <div class="auto-phase">Última mudança: 26/05 08:30  ·  420 km  ·  45%</div>
+        </div>
+      </div>
+      <div class="switch-wrap">
+        <div class="switch-track hev-on"></div>
+        <div class="switch-thumb sw-on"></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="sp sp10"></div>
+
+  <div class="cards">
+    <!-- power_model LOCKED -->
+    <div class="card locked">
+      <div class="card-top">
+        <div class="card-icon"><svg><use href="#ico-car" stroke="rgba(245,158,11,.6)"/></svg></div>
+        <div class="card-label">power_model_config</div>
+        <div class="card-ns">car.ev_setting</div>
+      </div>
+      <div class="card-value-area"><span class="card-value v0">0</span></div>
+      <div class="card-bottom">
+        <div class="chips"><div class="chip sel-0">0</div><div class="chip">1</div><div class="chip">2</div></div>
+        <div class="card-hint locked-hint">Controlado pelo Auto</div>
+      </div>
+    </div>
+    <!-- soc target = 80 (AUTO) -->
+    <div class="card">
+      <div class="card-top">
+        <div class="card-icon"><svg><use href="#ico-bat-charge" stroke="#6b6b6b"/></svg></div>
+        <div class="card-label">charge_soc_target_config</div>
+        <div class="card-ns">car.ev_setting</div>
+      </div>
+      <div class="card-value-area"><span class="card-value readonly">80</span></div>
+      <div class="card-bottom"><div class="badge">somente leitura</div></div>
+    </div>
+    <!-- power_reserve LOCKED -->
+    <div class="card locked">
+      <div class="card-top">
+        <div class="card-icon"><svg><use href="#ico-leaf" stroke="rgba(245,158,11,.6)"/></svg></div>
+        <div class="card-label">power_reserve_config</div>
+        <div class="card-ns">car.ev_setting</div>
+      </div>
+      <div class="card-value-area"><span class="card-value v0">0</span></div>
+      <div class="card-bottom">
+        <div class="chips"><div class="chip sel-0">0</div><div class="chip">1</div><div class="chip">2</div></div>
+        <div class="card-hint locked-hint">Controlado pelo Auto</div>
+      </div>
+    </div>
+    <!-- battery 45% amber -->
+    <div class="card">
+      <div class="card-top">
+        <div class="card-icon"><svg><use href="#ico-bat-full" stroke="#f59e0b"/></svg></div>
+        <div class="card-label">cur_battery_power_percentage</div>
+        <div class="card-ns">car.ev_info</div>
+      </div>
+      <div class="card-value-area">
+        <div class="cv-col">
+          <span class="card-value bat-amber">45</span>
+          <span class="pct bat-amber">%</span>
+        </div>
+      </div>
+      <div class="card-bottom">
+        <div class="bat-bar-wrap"><div class="bat-bar bat-amber" style="width:45%"></div></div>
+        <div class="remain-km">
+          <span class="remain-km-val bat-amber">28 km</span>
+          <span class="remain-km-lbl">restantes</span>
+        </div>
+        <div class="badge">somente leitura</div>
+      </div>
+    </div>
+    <!-- basic odo 415 km -->
+    <div class="card">
+      <div class="card-top">
+        <div class="card-icon"><svg><use href="#ico-route" stroke="#6b6b6b"/></svg></div>
+        <div class="card-label">remain_odometer</div>
+        <div class="card-ns">car.basic</div>
+      </div>
+      <div class="card-value-area">
+        <div class="cv-col">
+          <span class="card-value odo">415</span>
+          <span class="km-unit">km</span>
+        </div>
+      </div>
+      <div class="card-bottom"><div class="badge">somente leitura</div></div>
+    </div>
+    <!-- engine = 1 ligado -->
+    <div class="card engine-on-card">
+      <div class="card-top">
+        <div class="card-icon"><svg><use href="#ico-power" stroke="#22c55e"/></svg></div>
+        <div class="card-label">engine_state</div>
+        <div class="card-ns">car.basic</div>
+      </div>
+      <div class="card-value-area">
+        <div class="cv-col">
+          <span class="card-value eng-on">1</span>
+          <span class="eng-lbl on">Ligado</span>
+        </div>
+      </div>
+      <div class="card-bottom">
+        <div class="last-change">mudança: 26/05 08:30</div>
+        <div class="badge">somente leitura</div>
+      </div>
+    </div>
+  </div>
+
+  <div class="sp sp12"></div>
+  <div class="log">
+    <div class="log-title">Histórico de Ações</div>
+    <div class="log-body">
+      <div class="log-row auto">14:31:02  [AUTO] charge_soc_target_config → 80</div>
+      <div class="log-row auto">14:31:02  [AUTO] power_reserve_config → 0</div>
+      <div class="log-row auto">14:31:02  [AUTO] power_model_config → 0</div>
+    </div>
+  </div>
+
+</div></div>
+
+
+<!-- ═══════════════════════════════════════════════════
+     ESTADO 4 — Auto HEV disparou wade_mode · motor off 26h · bat 15%
+═══════════════════════════════════════════════════ -->
+<p class="scene-label">Estado 4 — Auto HEV disparou wade_mode · motor desligado 26h · bat 15% · odo 320km</p>
+<div class="scene"><div class="screen">
+
+  <div class="header">
+    <div class="header-left">
+      <h1>EV MANAGER</h1>
+      <p>Controle de combustível em viagem</p>
+    </div>
+    <div class="header-right">
+      <span class="version">v1.5.0</span>
+      <!-- update btn: uptodate -->
+      <div class="upd-uptodate">
+        <svg><use href="#ico-check" stroke="#22c55e"/></svg>
+      </div>
+      <div class="dot-wrap">
+        <div class="dot on"></div>
+        <span class="dot-label on">Conectado</span>
+      </div>
+    </div>
+  </div>
+
+  <div class="sp sp10"></div>
+
+  <div class="auto-row">
+    <!-- ciclo ON charging -->
+    <div class="auto-card ciclo on">
+      <div class="auto-left">
+        <div class="auto-icon"><svg><use href="#ico-autorenew" stroke="#22c55e"/></svg></div>
+        <div class="auto-texts">
+          <div class="auto-title ciclo-on">CICLO AUTOMÁTICO</div>
+          <div class="auto-phase">⬆  Carregando — aguardando bateria ≥ 75%  ·  bateria: 15%</div>
+        </div>
+      </div>
+      <div class="switch-wrap">
+        <div class="switch-track ciclo-on"></div>
+        <div class="switch-thumb sw-on"></div>
+      </div>
+    </div>
+    <!-- hev ON → disparou -->
+    <div class="auto-card hev on">
+      <div class="auto-left">
+        <div class="auto-icon"><svg><use href="#ico-loop" stroke="#3b82f6"/></svg></div>
+        <div class="auto-texts">
+          <div class="auto-title hev-on">AUTO HEV</div>
+          <div class="auto-phase">Última mudança: 25/05 06:12  ·  320 km  ·  15%  — pulso disparado</div>
+        </div>
+      </div>
+      <div class="switch-wrap">
+        <div class="switch-track hev-on"></div>
+        <div class="switch-thumb sw-on"></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="sp sp10"></div>
+
+  <div class="cards">
+    <!-- power_model LOCKED -->
+    <div class="card locked">
+      <div class="card-top">
+        <div class="card-icon"><svg><use href="#ico-car" stroke="rgba(245,158,11,.6)"/></svg></div>
+        <div class="card-label">power_model_config</div>
+        <div class="card-ns">car.ev_setting</div>
+      </div>
+      <div class="card-value-area"><span class="card-value v0">0</span></div>
+      <div class="card-bottom">
+        <div class="chips"><div class="chip sel-0">0</div><div class="chip">1</div><div class="chip">2</div></div>
+        <div class="card-hint locked-hint">Controlado pelo Auto</div>
+      </div>
+    </div>
+    <!-- soc = 80 -->
+    <div class="card">
+      <div class="card-top">
+        <div class="card-icon"><svg><use href="#ico-bat-charge" stroke="#6b6b6b"/></svg></div>
+        <div class="card-label">charge_soc_target_config</div>
+        <div class="card-ns">car.ev_setting</div>
+      </div>
+      <div class="card-value-area"><span class="card-value readonly">80</span></div>
+      <div class="card-bottom"><div class="badge">somente leitura</div></div>
+    </div>
+    <!-- power_reserve LOCKED -->
+    <div class="card locked">
+      <div class="card-top">
+        <div class="card-icon"><svg><use href="#ico-leaf" stroke="rgba(245,158,11,.6)"/></svg></div>
+        <div class="card-label">power_reserve_config</div>
+        <div class="card-ns">car.ev_setting</div>
+      </div>
+      <div class="card-value-area"><span class="card-value v0">0</span></div>
+      <div class="card-bottom">
+        <div class="chips"><div class="chip sel-0">0</div><div class="chip">1</div><div class="chip">2</div></div>
+        <div class="card-hint locked-hint">Controlado pelo Auto</div>
+      </div>
+    </div>
+    <!-- battery 15% red -->
+    <div class="card">
+      <div class="card-top">
+        <div class="card-icon"><svg><use href="#ico-bat-full" stroke="#ef4444"/></svg></div>
+        <div class="card-label">cur_battery_power_percentage</div>
+        <div class="card-ns">car.ev_info</div>
+      </div>
+      <div class="card-value-area">
+        <div class="cv-col">
+          <span class="card-value bat-red">15</span>
+          <span class="pct bat-red">%</span>
+        </div>
+      </div>
+      <div class="card-bottom">
+        <div class="bat-bar-wrap"><div class="bat-bar bat-red" style="width:15%"></div></div>
+        <div class="remain-km">
+          <span class="remain-km-val bat-red">8 km</span>
+          <span class="remain-km-lbl">restantes</span>
+        </div>
+        <div class="badge">somente leitura</div>
+      </div>
+    </div>
+    <!-- basic odo 320 km -->
+    <div class="card">
+      <div class="card-top">
+        <div class="card-icon"><svg><use href="#ico-route" stroke="#6b6b6b"/></svg></div>
+        <div class="card-label">remain_odometer</div>
+        <div class="card-ns">car.basic</div>
+      </div>
+      <div class="card-value-area">
+        <div class="cv-col">
+          <span class="card-value odo">320</span>
+          <span class="km-unit">km</span>
+        </div>
+      </div>
+      <div class="card-bottom"><div class="badge">somente leitura</div></div>
+    </div>
+    <!-- engine = 0 desligado -->
+    <div class="card">
+      <div class="card-top">
+        <div class="card-icon"><svg><use href="#ico-power" stroke="#6b6b6b"/></svg></div>
+        <div class="card-label">engine_state</div>
+        <div class="card-ns">car.basic</div>
+      </div>
+      <div class="card-value-area">
+        <div class="cv-col">
+          <span class="card-value eng-off">0</span>
+          <span class="eng-lbl off">Desligado</span>
+        </div>
+      </div>
+      <div class="card-bottom">
+        <div class="last-change">mudança: 25/05 06:12</div>
+        <div class="badge">somente leitura</div>
+      </div>
+    </div>
+  </div>
+
+  <div class="sp sp12"></div>
+  <div class="log">
+    <div class="log-title">Histórico de Ações</div>
+    <div class="log-body">
+      <div class="log-row auto">08:12:05  [AUTO] wade_mode_enable → 0</div>
+      <div class="log-row auto">08:12:03  [AUTO] wade_mode_enable → 1</div>
+      <div class="log-row auto">07:31:08  [AUTO] charge_soc_target_config → 80</div>
+    </div>
+  </div>
+
+</div></div>
+
+</body>
+</html>
