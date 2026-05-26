@@ -14,9 +14,12 @@ object EvStateHolder {
     var batteryLevel           by mutableStateOf("--")
     var remainOdometer         by mutableStateOf("--")
     var basicRemainOdo         by mutableStateOf("--")
+    var engineState            by mutableStateOf("--")
+    var lastEngineChange       by mutableStateOf("--")
 
     /** Persisted via SharedPreferences; service reads prefs directly, UI reads this for display. */
     var autoEnabled            by mutableStateOf(false)
+    var autoHevEnabled         by mutableStateOf(false)
 
     val actionLog              = mutableStateListOf<String>()
 
@@ -46,6 +49,12 @@ object EvStateHolder {
         batteryLevel          = battery      ?: "--"
         remainOdometer        = remainOdo    ?: "--"
         basicRemainOdo        = basicOdo     ?: "--"
+    }
+
+    /** Called from Java service to update engine state + last change timestamp. */
+    fun setEngineStateData(value: String?, lastChangeFmt: String) {
+        engineState      = value        ?: "--"
+        lastEngineChange = lastChangeFmt
     }
 
     fun addLog(entry: String) {

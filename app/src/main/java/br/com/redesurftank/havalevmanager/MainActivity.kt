@@ -24,6 +24,8 @@ import androidx.compose.material.icons.filled.BatteryChargingFull
 import androidx.compose.material.icons.filled.BatteryFull
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.ElectricCar
+import androidx.compose.material.icons.filled.Loop
+import androidx.compose.material.icons.filled.Power
 import androidx.compose.material.icons.filled.Route
 import androidx.compose.material.icons.filled.EnergySavingsLeaf
 import androidx.compose.material.icons.filled.Refresh
@@ -290,14 +292,28 @@ fun MainScreen() {
 
         Spacer(Modifier.height(10.dp))
 
-        // Auto-cycle toggle — full width
-        AutoToggleCard(
-            modifier        = Modifier.fillMaxWidth(),
-            autoEnabled     = state.autoEnabled,
-            connected       = state.vehicleConnected,
-            chargeSocTarget = state.chargeSocTargetConfig,
-            batteryLevel    = state.batteryLevel
-        )
+        // Auto toggles — side by side
+        Row(
+            modifier              = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(16.dp)
+        ) {
+            AutoToggleCard(
+                modifier        = Modifier.weight(1f),
+                autoEnabled     = state.autoEnabled,
+                connected       = state.vehicleConnected,
+                chargeSocTarget = state.chargeSocTargetConfig,
+                batteryLevel    = state.batteryLevel
+            )
+            AutoHevCard(
+                modifier    = Modifier.weight(1f),
+                autoHev     = state.autoHevEnabled,
+                connected   = state.vehicleConnected,
+                engineState = state.engineState,
+                lastChange  = state.lastEngineChange,
+                basicOdo    = state.basicRemainOdo,
+                battery     = state.batteryLevel
+            )
+        }
 
         Spacer(Modifier.height(10.dp))
 
@@ -338,6 +354,11 @@ fun MainScreen() {
             BasicOdoCard(
                 modifier  = Modifier.weight(1f).fillMaxHeight(),
                 basicOdo  = state.basicRemainOdo
+            )
+            EngineStateCard(
+                modifier      = Modifier.weight(1f).fillMaxHeight(),
+                engineState   = state.engineState,
+                lastChange    = state.lastEngineChange
             )
         }
 
@@ -961,6 +982,199 @@ fun BatteryCard(
                         text     = "restantes",
                         fontSize = 10.sp,
                         color    = HmiFgDim
+                    )
+                }
+                Box(
+                    modifier = Modifier
+                        .background(HmiSurface2, RoundedCornerShape(4.dp))
+                        .border(1.dp, HmiBorderStr, RoundedCornerShape(4.dp))
+                        .padding(horizontal = 8.dp, vertical = 3.dp)
+                ) {
+                    Text(text = "somente leitura", fontSize = 10.sp, color = HmiFgDim)
+                }
+            }
+        }
+    }
+}
+
+// ─────────────────────────────────────────────────────────────
+// AutoHevCard — independent Auto HEV toggle
+// ─────────────────────────────────────────────────────────────
+
+@Composable
+fun AutoHevCard(
+    modifier    : Modifier = Modifier,
+    autoHev     : Boolean,
+    connected   : Boolean,
+    engineState : String,
+    lastChange  : String,
+    basicOdo    : String,
+    battery     : String
+) {
+    val bgGradient = if (autoHev)
+        Brush.horizontalGradient(listOf(Color(0x1F3B82F6), Color.Transparent))
+    else
+        Brush.horizontalGradient(listOf(Color.Transparent, Color.Transparent))
+    val accentBlue  = Color(0xFF3B82F6)
+    val borderColor = if (autoHev) accentBlue.copy(alpha = 0.4f) else HmiBorder
+
+    val odo = basicOdo.toIntOrNull()
+    val bat = battery.toIntOrNull()
+    val statusText = when {
+        !connected -> "Aguardando conexão com o veículo"
+        !autoHev   -> "Ativar ciclo de recuperação HEV (24h)"
+        lastChange == "--" -> "Aguardando primeira mudança do motor…"
+        else -> buildString {
+            append("Última mudança: $lastChange")
+            if (odo != null) append("  ·  $odo km")
+            if (bat != null) append("  ·  $bat%")
+        }
+    }
+
+    Box(
+        modifier = modifier
+            .background(bgGradient, RoundedCornerShape(18.dp))
+            .border(1.dp, borderColor, RoundedCornerShape(18.dp))
+            .padding(horizontal = 24.dp, vertical = 14.dp)
+    ) {
+        Row(
+            modifier              = Modifier.fillMaxWidth(),
+            verticalAlignment     = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.SpaceBetween
+        ) {
+            Row(
+                modifier              = Modifier.weight(1f),
+                verticalAlignment     = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(14.dp)
+            ) {
+                Icon(
+                    imageVector        = Icons.Filled.Loop,
+                    contentDescription = null,
+                    tint               = if (autoHev) accentBlue else HmiFgDim,
+                    modifier           = Modifier.size(24.dp)
+                )
+                Column(verticalArrangement = Arrangement.spacedBy(3.dp)) {
+                    Text(
+                        text          = "AUTO HEV",
+                        fontSize      = 12.sp,
+                        fontWeight    = FontWeight.Bold,
+                        color         = if (autoHev) accentBlue else HmiFgMuted,
+                        letterSpacing = 1.5.sp
+                    )
+                    Text(
+                        text     = statusText,
+                        fontSize = 11.sp,
+                        color    = HmiFgDim
+                    )
+                }
+            }
+            Switch(
+                checked         = autoHev,
+                onCheckedChange = { if (connected) EvStateHolder.sendCommand("auto_hev_enabled", it.toString()) },
+                enabled         = connected,
+                colors          = SwitchDefaults.colors(
+                    checkedThumbColor           = HmiBg,
+                    checkedTrackColor           = accentBlue,
+                    uncheckedThumbColor         = HmiFgDim,
+                    uncheckedTrackColor         = HmiSurface2,
+                    disabledCheckedTrackColor   = accentBlue.copy(alpha = 0.38f),
+                    disabledUncheckedTrackColor = HmiSurface2.copy(alpha = 0.38f)
+                )
+            )
+        }
+    }
+}
+
+// ─────────────────────────────────────────────────────────────
+// EngineStateCard — car.basic.engine_state (read-only)
+// ─────────────────────────────────────────────────────────────
+
+@Composable
+fun EngineStateCard(
+    modifier    : Modifier = Modifier,
+    engineState : String,
+    lastChange  : String
+) {
+    val isUnknown    = engineState == "--"
+    val isOn         = engineState == "1"
+    val stateColor   = when {
+        isUnknown -> HmiFgDim
+        isOn      -> HmiAccent
+        else      -> HmiFgDim
+    }
+    val stateLabel   = when {
+        isUnknown -> "--"
+        isOn      -> "Ligado"
+        else      -> "Desligado"
+    }
+
+    Box(
+        modifier = modifier
+            .background(HmiSurface, RoundedCornerShape(22.dp))
+            .border(
+                1.dp,
+                if (isOn) HmiAccentEdge else HmiBorder,
+                RoundedCornerShape(22.dp)
+            )
+            .padding(22.dp)
+    ) {
+        Column(
+            modifier            = Modifier.fillMaxSize(),
+            verticalArrangement = Arrangement.SpaceBetween
+        ) {
+            Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                Icon(
+                    imageVector        = Icons.Filled.Power,
+                    contentDescription = null,
+                    tint               = stateColor,
+                    modifier           = Modifier.size(28.dp)
+                )
+                Text(
+                    text       = "engine_state",
+                    fontSize   = 11.sp,
+                    color      = HmiFgMuted,
+                    fontFamily = FontFamily.Monospace
+                )
+                Text(
+                    text     = "car.basic",
+                    fontSize = 10.sp,
+                    color    = HmiFgDim
+                )
+            }
+
+            Box(
+                modifier         = Modifier.weight(1f).fillMaxWidth(),
+                contentAlignment = Alignment.Center
+            ) {
+                Column(
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.Center
+                ) {
+                    Text(
+                        text       = engineState,
+                        fontSize   = if (isUnknown) 64.sp else 72.sp,
+                        fontWeight = FontWeight.Bold,
+                        color      = stateColor,
+                        textAlign  = TextAlign.Center
+                    )
+                    if (!isUnknown) {
+                        Text(
+                            text      = stateLabel,
+                            fontSize  = 12.sp,
+                            color     = stateColor.copy(alpha = 0.7f),
+                            textAlign = TextAlign.Center
+                        )
+                    }
+                }
+            }
+
+            Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                if (lastChange != "--") {
+                    Text(
+                        text     = "mudança: $lastChange",
+                        fontSize = 10.sp,
+                        color    = HmiFgDim,
+                        fontFamily = FontFamily.Monospace
                     )
                 }
                 Box(

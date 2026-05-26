@@ -52,11 +52,14 @@ public class EvManagerService extends Service implements Shizuku.OnBinderDeadLis
     private static final String CHANNEL_ID         = "EvManagerChannel";
     private static final int    NOTIFICATION_ID     = 1;
     private static final String PREFS_NAME          = "ev_manager_prefs";
-    private static final String KEY_SHIZUKU_LIB       = "shizuku_lib_location";
-    private static final String KEY_AUTO_ENABLED      = "auto_enabled";
-    private static final String KEY_LAST_SOC_TARGET   = "last_soc_target";
-    private static final String KEY_SAVED_POWER_MODEL = "saved_power_model_config";
-    private static final int    DEFAULT_SOC_TARGET    = 80;   // start in charging phase
+    private static final String KEY_SHIZUKU_LIB              = "shizuku_lib_location";
+    private static final String KEY_AUTO_ENABLED             = "auto_enabled";
+    private static final String KEY_LAST_SOC_TARGET          = "last_soc_target";
+    private static final String KEY_SAVED_POWER_MODEL        = "saved_power_model_config";
+    private static final String KEY_AUTO_HEV_ENABLED         = "auto_hev_enabled";
+    private static final String KEY_LAST_ENGINE_STATE_1_TIME = "last_engine_state_1_ms";
+    private static final String KEY_LAST_ENGINE_CHANGE_TIME  = "last_engine_change_ms";
+    private static final int    DEFAULT_SOC_TARGET           = 80;   // start in charging phase
 
     private static final String PROP_POWER_MODEL_CONFIG       = "car.ev_setting.power_model_config";
     private static final String PROP_CHARGE_SOC_TARGET_CONFIG = "car.ev_setting.charge_soc_target_config";
@@ -64,6 +67,8 @@ public class EvManagerService extends Service implements Shizuku.OnBinderDeadLis
     private static final String PROP_BATTERY_CURRENT          = "car.ev_info.cur_battery_power_percentage";
     private static final String PROP_REMAIN_ODOMETER          = "car.ev_info.electric_mode_remain_odometer";
     private static final String PROP_BASIC_REMAIN_ODO         = "car.basic.remain_odometer";
+    private static final String PROP_ENGINE_STATE             = "car.basic.engine_state";
+    private static final String PROP_WADE_MODE                = "car.ev_setting.wade_mode_enable";
 
     private static final String[] ALL_PROPS = {
         PROP_POWER_MODEL_CONFIG,
@@ -71,7 +76,8 @@ public class EvManagerService extends Service implements Shizuku.OnBinderDeadLis
         PROP_POWER_RESERVE_CONFIG,
         PROP_BATTERY_CURRENT,
         PROP_REMAIN_ODOMETER,
-        PROP_BASIC_REMAIN_ODO
+        PROP_BASIC_REMAIN_ODO,
+        PROP_ENGINE_STATE
     };
 
     private static Method getServiceMethod;
@@ -104,12 +110,30 @@ public class EvManagerService extends Service implements Shizuku.OnBinderDeadLis
     private IIntelligentVehicleControlService controlService;
     private final Map<String, String> dataCache = new HashMap<>();
 
-    private final SimpleDateFormat timeFormat = new SimpleDateFormat("HH:mm:ss", Locale.getDefault());
+    private final SimpleDateFormat timeFormat       = new SimpleDateFormat("HH:mm:ss", Locale.getDefault());
+    private final SimpleDateFormat changeDateFormat = new SimpleDateFormat("dd/MM HH:mm", Locale.getDefault());
+
+    // Auto HEV — 1-minute polling loop
+    private final Runnable autoHevRunnable = new Runnable() {
+        @Override
+        public void run() {
+            if (prefs != null && prefs.getBoolean(KEY_AUTO_HEV_ENABLED, false)) {
+                evaluateAutoHev();
+                backgroundHandler.postDelayed(this, 60_000);
+            }
+        }
+    };
 
     private final IListener vehicleDataListener = new IListener.Stub() {
         @Override
         public void onDataChanged(String key, String value) {
-            dataCache.put(key, value);
+            if (PROP_ENGINE_STATE.equals(key)) {
+                String prev = dataCache.get(PROP_ENGINE_STATE);
+                dataCache.put(key, value);
+                backgroundHandler.post(() -> handleEngineStateChange(prev, value));
+            } else {
+                dataCache.put(key, value);
+            }
             backgroundHandler.post(EvManagerService.this::pushState);
         }
     };
@@ -147,9 +171,13 @@ public class EvManagerService extends Service implements Shizuku.OnBinderDeadLis
                     .build();
             startForeground(NOTIFICATION_ID, notification);
 
-            // Restore persisted autoEnabled to StateHolder immediately on start
-            boolean savedAutoEnabled = prefs.getBoolean(KEY_AUTO_ENABLED, false);
-            mainHandler.post(() -> EvStateHolder.INSTANCE.setAutoEnabled(savedAutoEnabled));
+            // Restore persisted auto states to StateHolder immediately on start
+            boolean savedAutoEnabled    = prefs.getBoolean(KEY_AUTO_ENABLED, false);
+            boolean savedAutoHevEnabled = prefs.getBoolean(KEY_AUTO_HEV_ENABLED, false);
+            mainHandler.post(() -> {
+                EvStateHolder.INSTANCE.setAutoEnabled(savedAutoEnabled);
+                EvStateHolder.INSTANCE.setAutoHevEnabled(savedAutoHevEnabled);
+            });
 
             boolean needsBootstrap = true;
             try {
@@ -222,6 +250,7 @@ public class EvManagerService extends Service implements Shizuku.OnBinderDeadLis
 
     @Override
     public void onDestroy() {
+        backgroundHandler.removeCallbacks(autoHevRunnable);
         if (handlerThread != null) handlerThread.quitSafely();
         isServiceRunning = false;
         Shizuku.removeBinderReceivedListener(this::onShizukuBinderReceived);
@@ -232,6 +261,7 @@ public class EvManagerService extends Service implements Shizuku.OnBinderDeadLis
         } catch (Exception ignored) {}
         mainHandler.post(() -> {
             EvStateHolder.INSTANCE.updateEvData(false, null, null, null, null, null, null);
+            EvStateHolder.INSTANCE.setEngineStateData(null, "--");
             EvStateHolder.INSTANCE.commandCallback = null;
         });
         Log.w(TAG, "Service destroyed");
@@ -343,6 +373,8 @@ public class EvManagerService extends Service implements Shizuku.OnBinderDeadLis
                         try {
                             if ("auto_enabled".equals(key)) {
                                 handleAutoToggle("true".equals(value));
+                            } else if ("auto_hev_enabled".equals(key)) {
+                                handleAutoHevToggle("true".equals(value));
                             } else {
                                 sendEvCommand(key, value);
                                 dataCache.put(key, value);
@@ -353,6 +385,13 @@ public class EvManagerService extends Service implements Shizuku.OnBinderDeadLis
                             Log.e(TAG, "Error handling command: " + e.getMessage(), e);
                         }
                     });
+
+            // Resume Auto HEV loop if it was active before restart
+            if (prefs.getBoolean(KEY_AUTO_HEV_ENABLED, false)) {
+                backgroundHandler.removeCallbacks(autoHevRunnable);
+                backgroundHandler.postDelayed(autoHevRunnable, 60_000);
+                Log.d(TAG, "Auto HEV loop resumed after (re)connect");
+            }
 
             Shizuku.addBinderDeadListener(this);
             pushState();
@@ -420,6 +459,88 @@ public class EvManagerService extends Service implements Shizuku.OnBinderDeadLis
     }
 
     // ──────────────────────────────────────────────────────────────────────────
+    // Auto HEV toggle + engine state tracking
+    // ──────────────────────────────────────────────────────────────────────────
+
+    /** Called on background thread. */
+    private void handleAutoHevToggle(boolean enabled) {
+        prefs.edit().putBoolean(KEY_AUTO_HEV_ENABLED, enabled).apply();
+        mainHandler.post(() -> EvStateHolder.INSTANCE.setAutoHevEnabled(enabled));
+        Log.w(TAG, "Auto HEV mode " + (enabled ? "enabled" : "disabled"));
+
+        backgroundHandler.removeCallbacks(autoHevRunnable);
+        if (enabled) {
+            backgroundHandler.post(autoHevRunnable);   // first tick immediately
+        }
+        pushState();
+    }
+
+    /** Called on background thread whenever car.basic.engine_state changes value. */
+    private void handleEngineStateChange(String prev, String value) {
+        if (value == null) return;
+        long now = System.currentTimeMillis();
+        SharedPreferences.Editor editor = prefs.edit();
+
+        if ("1".equals(value)) {
+            editor.putLong(KEY_LAST_ENGINE_STATE_1_TIME, now);
+        }
+        // Record genuine state transitions (not first-read from null)
+        if (prev != null && !prev.equals(value)) {
+            editor.putLong(KEY_LAST_ENGINE_CHANGE_TIME, now);
+            Log.d(TAG, "engine_state transition: " + prev + " → " + value
+                    + "  (saved change timestamp)");
+        }
+        editor.apply();
+    }
+
+    /**
+     * Evaluates Auto HEV conditions. Called every minute while auto_hev is active.
+     * Fires wade_mode pulse (1 → 0 after 2 s) when:
+     *   - last engine_state change > 24 h ago
+     *   - car.basic.remain_odometer > 100 km
+     *   - cur_battery_power_percentage < 80 %
+     * After firing, resets the change-time stamp so the next trigger is 24 h later.
+     */
+    private void evaluateAutoHev() {
+        long lastChangeMs = prefs.getLong(KEY_LAST_ENGINE_CHANGE_TIME, 0L);
+        if (lastChangeMs == 0L) return;   // never seen a change yet
+
+        long elapsed = System.currentTimeMillis() - lastChangeMs;
+        if (elapsed < 24L * 60 * 60 * 1000) return;   // < 24 h
+
+        String remainOdoStr = dataCache.get(PROP_BASIC_REMAIN_ODO);
+        String batteryStr   = dataCache.get(PROP_BATTERY_CURRENT);
+        if (remainOdoStr == null || batteryStr == null) return;
+
+        int remainOdo, battery;
+        try {
+            remainOdo = Integer.parseInt(remainOdoStr.trim());
+            battery   = Integer.parseInt(batteryStr.trim());
+        } catch (NumberFormatException e) { return; }
+
+        if (remainOdo <= 100 || battery >= 80) return;
+
+        Log.i(TAG, "AutoHEV: conditions met — idle " + (elapsed / 3_600_000) + "h, odo=" + remainOdo
+                + "km, bat=" + battery + "% — firing wade_mode pulse");
+
+        try {
+            sendEvCommand(PROP_WADE_MODE, "1", true);
+            // Reset the change timestamp so the next pulse is only after another 24 h
+            prefs.edit().putLong(KEY_LAST_ENGINE_CHANGE_TIME, System.currentTimeMillis()).apply();
+            backgroundHandler.postDelayed(() -> {
+                try {
+                    sendEvCommand(PROP_WADE_MODE, "0", true);
+                    pushState();
+                } catch (Exception e) {
+                    Log.e(TAG, "AutoHEV: error sending wade_mode=0", e);
+                }
+            }, 2_000);
+        } catch (Exception e) {
+            Log.e(TAG, "AutoHEV: error sending wade_mode=1", e);
+        }
+    }
+
+    // ──────────────────────────────────────────────────────────────────────────
     // State push & automation evaluation (always on background thread)
     // ──────────────────────────────────────────────────────────────────────────
 
@@ -430,11 +551,18 @@ public class EvManagerService extends Service implements Shizuku.OnBinderDeadLis
         String battery       = dataCache.get(PROP_BATTERY_CURRENT);
         String remainOdo     = dataCache.get(PROP_REMAIN_ODOMETER);
         String basicOdo      = dataCache.get(PROP_BASIC_REMAIN_ODO);
+        String engineState   = dataCache.get(PROP_ENGINE_STATE);
         boolean autoOn       = prefs != null && prefs.getBoolean(KEY_AUTO_ENABLED, false);
+        boolean autoHevOn    = prefs != null && prefs.getBoolean(KEY_AUTO_HEV_ENABLED, false);
+        long lastChangeMs    = prefs != null ? prefs.getLong(KEY_LAST_ENGINE_CHANGE_TIME, 0L) : 0L;
+        String lastChangeFmt = lastChangeMs > 0
+                ? changeDateFormat.format(new Date(lastChangeMs)) : "--";
 
         mainHandler.post(() -> {
             EvStateHolder.INSTANCE.updateEvData(true, powerModel, socTarget, powerReserve, battery, remainOdo, basicOdo);
             EvStateHolder.INSTANCE.setAutoEnabled(autoOn);
+            EvStateHolder.INSTANCE.setAutoHevEnabled(autoHevOn);
+            EvStateHolder.INSTANCE.setEngineStateData(engineState, lastChangeFmt);
         });
         evaluateAutomation();
     }
@@ -521,6 +649,8 @@ public class EvManagerService extends Service implements Shizuku.OnBinderDeadLis
             case PROP_BATTERY_CURRENT:          return "cur_battery_power_percentage";
             case PROP_REMAIN_ODOMETER:          return "electric_mode_remain_odometer";
             case PROP_BASIC_REMAIN_ODO:         return "remain_odometer";
+            case PROP_ENGINE_STATE:             return "engine_state";
+            case PROP_WADE_MODE:                return "wade_mode_enable";
             default:                            return key;
         }
     }
@@ -544,11 +674,15 @@ public class EvManagerService extends Service implements Shizuku.OnBinderDeadLis
     }
 
     private synchronized void restart() {
+        backgroundHandler.removeCallbacks(autoHevRunnable);
         isShizukuInitialized = false;
         isServiceRunning     = false;
         Shizuku.removeBinderReceivedListener(this::onShizukuBinderReceived);
         Shizuku.removeBinderDeadListener(this);
-        mainHandler.post(() -> EvStateHolder.INSTANCE.updateEvData(false, null, null, null, null, null, null));
+        mainHandler.post(() -> {
+            EvStateHolder.INSTANCE.updateEvData(false, null, null, null, null, null, null);
+            EvStateHolder.INSTANCE.setEngineStateData(null, "--");
+        });
         Log.w(TAG, "Scheduling service restart...");
         Intent broadcastIntent = new Intent(this, RestartReceiver.class);
         PendingIntent pendingIntent = PendingIntent.getBroadcast(

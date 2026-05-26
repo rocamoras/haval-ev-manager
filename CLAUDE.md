@@ -37,6 +37,8 @@ Before every commit+push, increment the version in `app/build.gradle.kts`:
 | `car.ev_info.cur_battery_power_percentage` | Somente leitura — % da bateria (usado pelo ciclo automático) |
 | `car.ev_info.electric_mode_remain_odometer` | Somente leitura — km restantes no modo elétrico (informativo no BatteryCard) |
 | `car.basic.remain_odometer` | Somente leitura — autonomia total restante em km (card próprio) |
+| `car.basic.engine_state` | Somente leitura — 0=desligado, 1=ligado; persiste timestamps de mudança |
+| `car.ev_setting.wade_mode_enable` | Somente escrita — pulso 1→0 disparado pelo Auto HEV |
 
 ## Ciclo automático (AutoToggleCard)
 
@@ -49,3 +51,12 @@ Quando ativado:
 - Ao ativar: salva o valor atual de `power_model_config` em `saved_power_model_config`
 - Ao desativar: restaura `power_model_config` ao valor salvo e remove a chave
 - Chave especial `"auto_enabled"` no `commandCallback` do serviço — não enviada ao carro
+
+## Auto HEV (AutoHevCard)
+
+Quando ativado:
+- Loop de 1 minuto verifica condições: `last_engine_change_ms` > 24h E `remain_odometer` > 100 E `cur_battery_power_percentage` < 80
+- Se condições atendidas: envia `wade_mode_enable = 1`, aguarda 2s, envia `wade_mode_enable = 0`
+- Após disparo, atualiza `last_engine_change_ms` para agora (reset do timer de 24h)
+- Persiste `auto_hev_enabled`, `last_engine_state_1_ms`, `last_engine_change_ms` em SharedPreferences
+- Registra mudanças de `engine_state` (0↔1) com timestamp — nunca sobrescreve com primeira leitura
