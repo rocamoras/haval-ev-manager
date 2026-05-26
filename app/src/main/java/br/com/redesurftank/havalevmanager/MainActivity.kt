@@ -24,6 +24,7 @@ import androidx.compose.material.icons.filled.BatteryChargingFull
 import androidx.compose.material.icons.filled.BatteryFull
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.ElectricCar
+import androidx.compose.material.icons.filled.Route
 import androidx.compose.material.icons.filled.EnergySavingsLeaf
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material3.*
@@ -333,6 +334,10 @@ fun MainScreen() {
                 modifier       = Modifier.weight(1f).fillMaxHeight(),
                 batteryLevel   = state.batteryLevel,
                 remainOdometer = state.remainOdometer
+            )
+            BasicOdoCard(
+                modifier  = Modifier.weight(1f).fillMaxHeight(),
+                basicOdo  = state.basicRemainOdo
             )
         }
 
@@ -958,6 +963,90 @@ fun BatteryCard(
                         color    = HmiFgDim
                     )
                 }
+                Box(
+                    modifier = Modifier
+                        .background(HmiSurface2, RoundedCornerShape(4.dp))
+                        .border(1.dp, HmiBorderStr, RoundedCornerShape(4.dp))
+                        .padding(horizontal = 8.dp, vertical = 3.dp)
+                ) {
+                    Text(text = "somente leitura", fontSize = 10.sp, color = HmiFgDim)
+                }
+            }
+        }
+    }
+}
+
+// ─────────────────────────────────────────────────────────────
+// BasicOdoCard — car.basic.remain_odometer (total remaining range)
+// ─────────────────────────────────────────────────────────────
+
+@Composable
+fun BasicOdoCard(
+    modifier : Modifier = Modifier,
+    basicOdo : String
+) {
+    val isUnknown = basicOdo == "--"
+
+    Box(
+        modifier = modifier
+            .background(HmiSurface, RoundedCornerShape(22.dp))
+            .border(1.dp, HmiBorder, RoundedCornerShape(22.dp))
+            .padding(22.dp)
+    ) {
+        Column(
+            modifier            = Modifier.fillMaxSize(),
+            verticalArrangement = Arrangement.SpaceBetween
+        ) {
+            Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                Icon(
+                    imageVector        = Icons.Filled.Route,
+                    contentDescription = null,
+                    tint               = HmiFgDim,
+                    modifier           = Modifier.size(28.dp)
+                )
+                Text(
+                    text       = "remain_odometer",
+                    fontSize   = 11.sp,
+                    color      = HmiFgMuted,
+                    fontFamily = FontFamily.Monospace
+                )
+                Text(
+                    text     = "car.basic",
+                    fontSize = 10.sp,
+                    color    = HmiFgDim
+                )
+            }
+
+            Box(
+                modifier         = Modifier.weight(1f).fillMaxWidth(),
+                contentAlignment = Alignment.Center
+            ) {
+                Column(
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.Center
+                ) {
+                    Text(
+                        text       = basicOdo,
+                        fontSize   = if (isUnknown) 64.sp else 56.sp,
+                        fontWeight = FontWeight.Bold,
+                        color      = if (isUnknown) HmiFgDim else HmiFgMuted,
+                        textAlign  = TextAlign.Center
+                    )
+                    if (!isUnknown) {
+                        Text(
+                            text      = "km",
+                            fontSize  = 16.sp,
+                            color     = HmiFgDim,
+                            textAlign = TextAlign.Center
+                        )
+                    }
+                }
+            }
+
+            Row(
+                verticalAlignment     = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(6.dp)
+            ) {
                 Box(
                     modifier = Modifier
                         .background(HmiSurface2, RoundedCornerShape(4.dp))

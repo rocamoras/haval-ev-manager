@@ -52,23 +52,26 @@ public class EvManagerService extends Service implements Shizuku.OnBinderDeadLis
     private static final String CHANNEL_ID         = "EvManagerChannel";
     private static final int    NOTIFICATION_ID     = 1;
     private static final String PREFS_NAME          = "ev_manager_prefs";
-    private static final String KEY_SHIZUKU_LIB     = "shizuku_lib_location";
-    private static final String KEY_AUTO_ENABLED    = "auto_enabled";
-    private static final String KEY_LAST_SOC_TARGET = "last_soc_target";
-    private static final int    DEFAULT_SOC_TARGET  = 80;   // start in charging phase
+    private static final String KEY_SHIZUKU_LIB       = "shizuku_lib_location";
+    private static final String KEY_AUTO_ENABLED      = "auto_enabled";
+    private static final String KEY_LAST_SOC_TARGET   = "last_soc_target";
+    private static final String KEY_SAVED_POWER_MODEL = "saved_power_model_config";
+    private static final int    DEFAULT_SOC_TARGET    = 80;   // start in charging phase
 
     private static final String PROP_POWER_MODEL_CONFIG       = "car.ev_setting.power_model_config";
     private static final String PROP_CHARGE_SOC_TARGET_CONFIG = "car.ev_setting.charge_soc_target_config";
     private static final String PROP_POWER_RESERVE_CONFIG     = "car.ev_setting.power_reserve_config";
     private static final String PROP_BATTERY_CURRENT          = "car.ev_info.cur_battery_power_percentage";
     private static final String PROP_REMAIN_ODOMETER          = "car.ev_info.electric_mode_remain_odometer";
+    private static final String PROP_BASIC_REMAIN_ODO         = "car.basic.remain_odometer";
 
     private static final String[] ALL_PROPS = {
         PROP_POWER_MODEL_CONFIG,
         PROP_CHARGE_SOC_TARGET_CONFIG,
         PROP_POWER_RESERVE_CONFIG,
         PROP_BATTERY_CURRENT,
-        PROP_REMAIN_ODOMETER
+        PROP_REMAIN_ODOMETER,
+        PROP_BASIC_REMAIN_ODO
     };
 
     private static Method getServiceMethod;
@@ -228,7 +231,7 @@ public class EvManagerService extends Service implements Shizuku.OnBinderDeadLis
                 controlService.unRegisterDataChangedListener(getPackageName(), vehicleDataListener);
         } catch (Exception ignored) {}
         mainHandler.post(() -> {
-            EvStateHolder.INSTANCE.updateEvData(false, null, null, null, null, null);
+            EvStateHolder.INSTANCE.updateEvData(false, null, null, null, null, null, null);
             EvStateHolder.INSTANCE.commandCallback = null;
         });
         Log.w(TAG, "Service destroyed");
@@ -371,6 +374,13 @@ public class EvManagerService extends Service implements Shizuku.OnBinderDeadLis
         Log.w(TAG, "Auto mode " + (enabled ? "enabled" : "disabled"));
 
         if (enabled) {
+            // Save current power_model_config so it can be restored on disable
+            String currentPowerModel = dataCache.get(PROP_POWER_MODEL_CONFIG);
+            if (currentPowerModel != null) {
+                prefs.edit().putString(KEY_SAVED_POWER_MODEL, currentPowerModel).apply();
+                Log.d(TAG, "Saved power_model_config=" + currentPowerModel + " for restore on Auto disable");
+            }
+
             // 1. Enforce base settings: HEV + priority reserve
             sendEvCommand(PROP_POWER_MODEL_CONFIG, "0", true);
             dataCache.put(PROP_POWER_MODEL_CONFIG, "0");
@@ -396,6 +406,15 @@ public class EvManagerService extends Service implements Shizuku.OnBinderDeadLis
             prefs.edit().putInt(KEY_LAST_SOC_TARGET, initialSoc).apply();
             sendEvCommand(PROP_CHARGE_SOC_TARGET_CONFIG, String.valueOf(initialSoc), true);
             dataCache.put(PROP_CHARGE_SOC_TARGET_CONFIG, String.valueOf(initialSoc));
+        } else {
+            // Restore saved power_model_config
+            String savedPowerModel = prefs.getString(KEY_SAVED_POWER_MODEL, null);
+            if (savedPowerModel != null) {
+                Log.d(TAG, "Restoring power_model_config=" + savedPowerModel);
+                sendEvCommand(PROP_POWER_MODEL_CONFIG, savedPowerModel, false);
+                dataCache.put(PROP_POWER_MODEL_CONFIG, savedPowerModel);
+                prefs.edit().remove(KEY_SAVED_POWER_MODEL).apply();
+            }
         }
         pushState();
     }
@@ -410,10 +429,11 @@ public class EvManagerService extends Service implements Shizuku.OnBinderDeadLis
         String powerReserve  = dataCache.get(PROP_POWER_RESERVE_CONFIG);
         String battery       = dataCache.get(PROP_BATTERY_CURRENT);
         String remainOdo     = dataCache.get(PROP_REMAIN_ODOMETER);
+        String basicOdo      = dataCache.get(PROP_BASIC_REMAIN_ODO);
         boolean autoOn       = prefs != null && prefs.getBoolean(KEY_AUTO_ENABLED, false);
 
         mainHandler.post(() -> {
-            EvStateHolder.INSTANCE.updateEvData(true, powerModel, socTarget, powerReserve, battery, remainOdo);
+            EvStateHolder.INSTANCE.updateEvData(true, powerModel, socTarget, powerReserve, battery, remainOdo, basicOdo);
             EvStateHolder.INSTANCE.setAutoEnabled(autoOn);
         });
         evaluateAutomation();
@@ -500,6 +520,7 @@ public class EvManagerService extends Service implements Shizuku.OnBinderDeadLis
             case PROP_POWER_RESERVE_CONFIG:     return "power_reserve_config";
             case PROP_BATTERY_CURRENT:          return "cur_battery_power_percentage";
             case PROP_REMAIN_ODOMETER:          return "electric_mode_remain_odometer";
+            case PROP_BASIC_REMAIN_ODO:         return "remain_odometer";
             default:                            return key;
         }
     }
@@ -527,7 +548,7 @@ public class EvManagerService extends Service implements Shizuku.OnBinderDeadLis
         isServiceRunning     = false;
         Shizuku.removeBinderReceivedListener(this::onShizukuBinderReceived);
         Shizuku.removeBinderDeadListener(this);
-        mainHandler.post(() -> EvStateHolder.INSTANCE.updateEvData(false, null, null, null, null, null));
+        mainHandler.post(() -> EvStateHolder.INSTANCE.updateEvData(false, null, null, null, null, null, null));
         Log.w(TAG, "Scheduling service restart...");
         Intent broadcastIntent = new Intent(this, RestartReceiver.class);
         PendingIntent pendingIntent = PendingIntent.getBroadcast(

@@ -13,6 +13,7 @@ object EvStateHolder {
     var powerReserveConfig     by mutableStateOf("--")
     var batteryLevel           by mutableStateOf("--")
     var remainOdometer         by mutableStateOf("--")
+    var basicRemainOdo         by mutableStateOf("--")
 
     /** Persisted via SharedPreferences; service reads prefs directly, UI reads this for display. */
     var autoEnabled            by mutableStateOf(false)
@@ -35,7 +36,8 @@ object EvStateHolder {
         socTarget: String?,
         powerReserve: String?,
         battery: String?,
-        remainOdo: String?
+        remainOdo: String?,
+        basicOdo: String?
     ) {
         vehicleConnected      = connected
         powerModelConfig      = powerModel   ?: "--"
@@ -43,6 +45,7 @@ object EvStateHolder {
         powerReserveConfig    = powerReserve ?: "--"
         batteryLevel          = battery      ?: "--"
         remainOdometer        = remainOdo    ?: "--"
+        basicRemainOdo        = basicOdo     ?: "--"
     }
 
     fun addLog(entry: String) {
