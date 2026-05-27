@@ -66,7 +66,7 @@ public class EvManagerService extends Service implements Shizuku.OnBinderDeadLis
     private static final String PROP_POWER_RESERVE_CONFIG     = "car.ev_setting.power_reserve_config";
     private static final String PROP_BATTERY_CURRENT          = "car.ev_info.cur_battery_power_percentage";
     private static final String PROP_REMAIN_ODOMETER          = "car.ev_info.electric_mode_remain_odometer";
-    private static final String PROP_BASIC_REMAIN_ODO         = "car.basic.remain_odometer";
+    private static final String PROP_BASIC_REMAIN_ODO         = "car.ev_info.fuel_mode_remain_odometer";
     private static final String PROP_ENGINE_STATE             = "car.basic.engine_state";
     private static final String PROP_WADE_MODE                = "car.ev_setting.wade_mode_enable";
 
@@ -481,7 +481,7 @@ public class EvManagerService extends Service implements Shizuku.OnBinderDeadLis
         long now = System.currentTimeMillis();
         SharedPreferences.Editor editor = prefs.edit();
 
-        if ("1".equals(value)) {
+        if ("13".equals(value)) {
             editor.putLong(KEY_LAST_ENGINE_STATE_1_TIME, now);
         }
         // Record genuine state transitions (not first-read from null)
@@ -648,7 +648,7 @@ public class EvManagerService extends Service implements Shizuku.OnBinderDeadLis
             case PROP_POWER_RESERVE_CONFIG:     return "power_reserve_config";
             case PROP_BATTERY_CURRENT:          return "cur_battery_power_percentage";
             case PROP_REMAIN_ODOMETER:          return "electric_mode_remain_odometer";
-            case PROP_BASIC_REMAIN_ODO:         return "remain_odometer";
+            case PROP_BASIC_REMAIN_ODO:         return "fuel_mode_remain_odometer";
             case PROP_ENGINE_STATE:             return "engine_state";
             case PROP_WADE_MODE:                return "wade_mode_enable";
             default:                            return key;

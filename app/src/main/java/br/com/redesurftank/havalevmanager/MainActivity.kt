@@ -1096,7 +1096,7 @@ fun EngineStateCard(
     lastChange  : String
 ) {
     val isUnknown    = engineState == "--"
-    val isOn         = engineState == "1"
+    val isOn         = engineState == "13"
     val stateColor   = when {
         isUnknown -> HmiFgDim
         isOn      -> HmiAccent
@@ -1219,13 +1219,13 @@ fun BasicOdoCard(
                     modifier           = Modifier.size(28.dp)
                 )
                 Text(
-                    text       = "remain_odometer",
+                    text       = "fuel_mode_remain_odometer",
                     fontSize   = 11.sp,
                     color      = HmiFgMuted,
                     fontFamily = FontFamily.Monospace
                 )
                 Text(
-                    text     = "car.basic",
+                    text     = "car.ev_info",
                     fontSize = 10.sp,
                     color    = HmiFgDim
                 )

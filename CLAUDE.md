@@ -36,8 +36,8 @@ Before every commit+push, increment the version in `app/build.gradle.kts`:
 | `car.ev_setting.power_reserve_config` | Clicável — cicla 0→1→2→0 (bloqueado quando Auto ativo) |
 | `car.ev_info.cur_battery_power_percentage` | Somente leitura — % da bateria (usado pelo ciclo automático) |
 | `car.ev_info.electric_mode_remain_odometer` | Somente leitura — km restantes no modo elétrico (informativo no BatteryCard) |
-| `car.basic.remain_odometer` | Somente leitura — autonomia total restante em km (card próprio) |
-| `car.basic.engine_state` | Somente leitura — 0=desligado, 1=ligado; persiste timestamps de mudança |
+| `car.ev_info.fuel_mode_remain_odometer` | Somente leitura — autonomia no modo combustão restante em km (card próprio) |
+| `car.basic.engine_state` | Somente leitura — 13=ligado (combustão), 11(ou outro)=desligado; persiste timestamps de mudança |
 | `car.ev_setting.wade_mode_enable` | Somente escrita — pulso 1→0 disparado pelo Auto HEV |
 
 ## Ciclo automático (AutoToggleCard)
@@ -59,4 +59,5 @@ Quando ativado:
 - Se condições atendidas: envia `wade_mode_enable = 1`, aguarda 2s, envia `wade_mode_enable = 0`
 - Após disparo, atualiza `last_engine_change_ms` para agora (reset do timer de 24h)
 - Persiste `auto_hev_enabled`, `last_engine_state_1_ms`, `last_engine_change_ms` em SharedPreferences
-- Registra mudanças de `engine_state` (0↔1) com timestamp — nunca sobrescreve com primeira leitura
+- Registra mudanças de `engine_state` (13↔outro) com timestamp — nunca sobrescreve com primeira leitura
+- `engine_state = 13` → motor a combustão ligado; qualquer outro valor (ex: 11) → desligado
