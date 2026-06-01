@@ -37,7 +37,7 @@ Before every commit+push, increment the version in `app/build.gradle.kts`:
 | `car.ev_info.cur_battery_power_percentage` | Somente leitura — % da bateria (usado pelo ciclo automático) |
 | `car.ev_info.electric_mode_remain_odometer` | Somente leitura — km restantes no modo elétrico (informativo no BatteryCard) |
 | `car.ev_info.fuel_mode_remain_odometer` | Somente leitura — autonomia no modo combustão restante em km (card próprio) |
-| `car.basic.engine_state` | Somente leitura — 13=ligado (combustão), 11(ou outro)=desligado; persiste timestamps de mudança |
+| `car.basic.engine_state` | Somente leitura — 11=Modo EV, 13=Modo Combustão; persiste timestamps de mudança |
 | `car.ev_setting.wade_mode_enable` | Somente escrita — pulso 1→0 disparado pelo Auto HEV |
 
 ## Ciclo automático (AutoToggleCard)
@@ -55,9 +55,13 @@ Quando ativado:
 ## Auto HEV (AutoHevCard)
 
 Quando ativado:
-- Loop de 1 minuto verifica condições: `last_engine_change_ms` > 24h E `remain_odometer` > 100 E `cur_battery_power_percentage` < 80
-- Se condições atendidas: envia `wade_mode_enable = 1`, aguarda 2s, envia `wade_mode_enable = 0`
+- Loop de 1 minuto verifica condições:
+  1. `engine_state == "11"` (carro em Modo EV) — **pré-condição obrigatória**; se já estiver em Combustão (13) ou outro estado, ignora
+  2. `last_engine_change_ms` > 24h (não houve transição recente)
+  3. `fuel_mode_remain_odometer` > 100 km
+  4. `cur_battery_power_percentage` < 80%
+- Se todas as condições atendidas: envia `wade_mode_enable = 1`, aguarda 2s, envia `wade_mode_enable = 0`
 - Após disparo, atualiza `last_engine_change_ms` para agora (reset do timer de 24h)
 - Persiste `auto_hev_enabled`, `last_engine_state_1_ms`, `last_engine_change_ms` em SharedPreferences
-- Registra mudanças de `engine_state` (13↔outro) com timestamp — nunca sobrescreve com primeira leitura
-- `engine_state = 13` → motor a combustão ligado; qualquer outro valor (ex: 11) → desligado
+- Registra transições genuínas de `engine_state` com timestamp — nunca sobrescreve na primeira leitura
+- `engine_state = 11` → Modo EV (azul); `engine_state = 13` → Modo Combustão (verde)

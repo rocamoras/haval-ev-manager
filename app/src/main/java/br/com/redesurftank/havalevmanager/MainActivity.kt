@@ -1021,11 +1021,13 @@ fun AutoHevCard(
     val odo = basicOdo.toIntOrNull()
     val bat = battery.toIntOrNull()
     val statusText = when {
-        !connected -> "Aguardando conexão com o veículo"
-        !autoHev   -> "Ativar ciclo de recuperação HEV (24h)"
-        lastChange == "--" -> "Aguardando primeira mudança do motor…"
+        !connected                -> "Aguardando conexão com o veículo"
+        !autoHev                  -> "Ativar ciclo de recuperação HEV (24h)"
+        engineState == "13"       -> "Motor já em Combustão — aguardando Modo EV"
+        engineState != "11"       -> "Estado do motor desconhecido (${engineState})"
+        lastChange == "--"        -> "Modo EV — aguardando primeira mudança…"
         else -> buildString {
-            append("Última mudança: $lastChange")
+            append("Modo EV · mudança: $lastChange")
             if (odo != null) append("  ·  $odo km")
             if (bat != null) append("  ·  $bat%")
         }
@@ -1096,16 +1098,19 @@ fun EngineStateCard(
     lastChange  : String
 ) {
     val isUnknown    = engineState == "--"
-    val isOn         = engineState == "13"
+    val isCombustion = engineState == "13"
+    val isEv         = engineState == "11"
     val stateColor   = when {
-        isUnknown -> HmiFgDim
-        isOn      -> HmiAccent
-        else      -> HmiFgDim
+        isUnknown    -> HmiFgDim
+        isCombustion -> HmiAccent     // green — combustion engine on
+        isEv         -> ValueColor1   // blue  — EV mode
+        else         -> HmiFgDim
     }
     val stateLabel   = when {
-        isUnknown -> "--"
-        isOn      -> "Ligado"
-        else      -> "Desligado"
+        isUnknown    -> "--"
+        isCombustion -> "Combustão"
+        isEv         -> "Modo EV"
+        else         -> engineState   // show raw value for unexpected states
     }
 
     Box(
@@ -1113,7 +1118,7 @@ fun EngineStateCard(
             .background(HmiSurface, RoundedCornerShape(22.dp))
             .border(
                 1.dp,
-                if (isOn) HmiAccentEdge else HmiBorder,
+                if (isCombustion) HmiAccentEdge else HmiBorder,
                 RoundedCornerShape(22.dp)
             )
             .padding(22.dp)
@@ -1152,7 +1157,7 @@ fun EngineStateCard(
                 ) {
                     Text(
                         text       = engineState,
-                        fontSize   = if (isUnknown) 64.sp else 72.sp,
+                        fontSize   = if (isUnknown) 64.sp else 56.sp,
                         fontWeight = FontWeight.Bold,
                         color      = stateColor,
                         textAlign  = TextAlign.Center
@@ -1160,8 +1165,9 @@ fun EngineStateCard(
                     if (!isUnknown) {
                         Text(
                             text      = stateLabel,
-                            fontSize  = 12.sp,
-                            color     = stateColor.copy(alpha = 0.7f),
+                            fontSize  = 13.sp,
+                            fontWeight = FontWeight.SemiBold,
+                            color     = stateColor.copy(alpha = 0.85f),
                             textAlign = TextAlign.Center
                         )
                     }

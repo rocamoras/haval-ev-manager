@@ -502,6 +502,11 @@ public class EvManagerService extends Service implements Shizuku.OnBinderDeadLis
      * After firing, resets the change-time stamp so the next trigger is 24 h later.
      */
     private void evaluateAutoHev() {
+        // Only makes sense to trigger wade_mode when car is in EV mode (11).
+        // If already in combustion mode (13) or any other state, do nothing.
+        String engineState = dataCache.get(PROP_ENGINE_STATE);
+        if (!"11".equals(engineState)) return;
+
         long lastChangeMs = prefs.getLong(KEY_LAST_ENGINE_CHANGE_TIME, 0L);
         if (lastChangeMs == 0L) return;   // never seen a change yet
 
