@@ -68,7 +68,7 @@ public class EvManagerService extends Service implements Shizuku.OnBinderDeadLis
     private static final String PROP_REMAIN_ODOMETER          = "car.ev_info.electric_mode_remain_odometer";
     private static final String PROP_BASIC_REMAIN_ODO         = "car.ev_info.fuel_mode_remain_odometer";
     private static final String PROP_ENGINE_STATE             = "car.basic.engine_state";
-    private static final String PROP_WADE_MODE                = "car.ev_setting.wade_mode_enable";
+    private static final String PROP_WADE_MODE                = "car.ev.setting.wade_mode_enable";
 
     private static final String[] ALL_PROPS = {
         PROP_POWER_MODEL_CONFIG,
