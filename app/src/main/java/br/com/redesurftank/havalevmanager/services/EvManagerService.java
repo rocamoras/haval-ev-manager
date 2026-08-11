@@ -368,6 +368,23 @@ public class EvManagerService extends Service implements Shizuku.OnBinderDeadLis
                     + " powerReserve=" + dataCache.get(PROP_POWER_RESERVE_CONFIG)
                     + " battery=" + dataCache.get(PROP_BATTERY_CURRENT));
 
+            // On (re)connect: if the battery is above 75 %, assume the algorithm is in the
+            // discharging phase (uso da bateria) regardless of what was saved.
+            if (prefs.getBoolean(KEY_AUTO_ENABLED, false)) {
+                String batteryStr = dataCache.get(PROP_BATTERY_CURRENT);
+                if (batteryStr != null) {
+                    try {
+                        int battery = Integer.parseInt(batteryStr.trim());
+                        if (battery > 75 && prefs.getInt(KEY_LAST_SOC_TARGET, DEFAULT_SOC_TARGET) != 20) {
+                            Log.w(TAG, "Connect: battery " + battery + "% > 75 → forcing discharging phase (soc_target=20)");
+                            prefs.edit().putInt(KEY_LAST_SOC_TARGET, 20).apply();
+                            sendEvCommand(PROP_CHARGE_SOC_TARGET_CONFIG, "20", true);
+                            dataCache.put(PROP_CHARGE_SOC_TARGET_CONFIG, "20");
+                        }
+                    } catch (NumberFormatException ignored) {}
+                }
+            }
+
             EvStateHolder.INSTANCE.commandCallback = (key, value) ->
                     backgroundHandler.post(() -> {
                         try {
@@ -375,6 +392,8 @@ public class EvManagerService extends Service implements Shizuku.OnBinderDeadLis
                                 handleAutoToggle("true".equals(value));
                             } else if ("auto_hev_enabled".equals(key)) {
                                 handleAutoHevToggle("true".equals(value));
+                            } else if ("auto_phase".equals(key)) {
+                                handleAutoPhaseChange(value);
                             } else {
                                 sendEvCommand(key, value);
                                 dataCache.put(key, value);
@@ -420,9 +439,9 @@ public class EvManagerService extends Service implements Shizuku.OnBinderDeadLis
                 Log.d(TAG, "Saved power_model_config=" + currentPowerModel + " for restore on Auto disable");
             }
 
-            // 1. Enforce base settings: HEV + priority reserve
-            sendEvCommand(PROP_POWER_MODEL_CONFIG, "0", true);
-            dataCache.put(PROP_POWER_MODEL_CONFIG, "0");
+            // 1. Enforce base settings: EV + priority reserve
+            sendEvCommand(PROP_POWER_MODEL_CONFIG, "1", true);
+            dataCache.put(PROP_POWER_MODEL_CONFIG, "1");
             sendEvCommand(PROP_POWER_RESERVE_CONFIG, "0", true);
             dataCache.put(PROP_POWER_RESERVE_CONFIG, "0");
 
@@ -455,6 +474,21 @@ public class EvManagerService extends Service implements Shizuku.OnBinderDeadLis
                 prefs.edit().remove(KEY_SAVED_POWER_MODEL).apply();
             }
         }
+        pushState();
+    }
+
+    /**
+     * Manually flips the algorithm phase. value "20" → discharging (uso da bateria),
+     * anything else → charging (carga). Persists the new phase and pushes the matching
+     * SOC target to the car immediately. Called on background thread.
+     */
+    private void handleAutoPhaseChange(String value) throws Exception {
+        int target = "20".equals(value) ? 20 : 80;
+        prefs.edit().putInt(KEY_LAST_SOC_TARGET, target).apply();
+        sendEvCommand(PROP_CHARGE_SOC_TARGET_CONFIG, String.valueOf(target), false);
+        dataCache.put(PROP_CHARGE_SOC_TARGET_CONFIG, String.valueOf(target));
+        Log.w(TAG, "Manual phase change → last_soc_target=" + target
+                + (target == 20 ? " (descarregando)" : " (carregando)"));
         pushState();
     }
 
@@ -562,11 +596,14 @@ public class EvManagerService extends Service implements Shizuku.OnBinderDeadLis
         long lastChangeMs    = prefs != null ? prefs.getLong(KEY_LAST_ENGINE_CHANGE_TIME, 0L) : 0L;
         String lastChangeFmt = lastChangeMs > 0
                 ? changeDateFormat.format(new Date(lastChangeMs)) : "--";
+        String autoPhase     = prefs != null
+                ? String.valueOf(prefs.getInt(KEY_LAST_SOC_TARGET, DEFAULT_SOC_TARGET)) : "--";
 
         mainHandler.post(() -> {
             EvStateHolder.INSTANCE.updateEvData(true, powerModel, socTarget, powerReserve, battery, remainOdo, basicOdo);
             EvStateHolder.INSTANCE.setAutoEnabled(autoOn);
             EvStateHolder.INSTANCE.setAutoHevEnabled(autoHevOn);
+            EvStateHolder.INSTANCE.setAutoPhase(autoPhase);
             EvStateHolder.INSTANCE.setEngineStateData(engineState, lastChangeFmt);
         });
         evaluateAutomation();
@@ -585,9 +622,9 @@ public class EvManagerService extends Service implements Shizuku.OnBinderDeadLis
 
         // Always enforce base settings while auto is on
         try {
-            if (!"0".equals(dataCache.get(PROP_POWER_MODEL_CONFIG))) {
-                sendEvCommand(PROP_POWER_MODEL_CONFIG, "0", true);
-                dataCache.put(PROP_POWER_MODEL_CONFIG, "0");
+            if (!"1".equals(dataCache.get(PROP_POWER_MODEL_CONFIG))) {
+                sendEvCommand(PROP_POWER_MODEL_CONFIG, "1", true);
+                dataCache.put(PROP_POWER_MODEL_CONFIG, "1");
             }
             if (!"0".equals(dataCache.get(PROP_POWER_RESERVE_CONFIG))) {
                 sendEvCommand(PROP_POWER_RESERVE_CONFIG, "0", true);

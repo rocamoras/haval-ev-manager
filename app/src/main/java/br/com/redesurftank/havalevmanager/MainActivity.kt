@@ -302,6 +302,7 @@ fun MainScreen() {
                 autoEnabled     = state.autoEnabled,
                 connected       = state.vehicleConnected,
                 chargeSocTarget = state.chargeSocTargetConfig,
+                autoPhase       = state.autoPhase,
                 batteryLevel    = state.batteryLevel
             )
             AutoHevCard(
@@ -597,6 +598,7 @@ fun AutoToggleCard(
     autoEnabled     : Boolean,
     connected       : Boolean,
     chargeSocTarget : String,
+    autoPhase       : String,
     batteryLevel    : String
 ) {
     val bgGradient = if (autoEnabled)
@@ -655,6 +657,52 @@ fun AutoToggleCard(
                         fontSize = 11.sp,
                         color    = HmiFgDim
                     )
+                }
+            }
+            run {
+                val isDischarging = autoPhase == "20"
+                val phaseActive   = connected && autoEnabled
+                val phaseColor    = if (isDischarging) BatteryAmber else HmiAccent
+                val phaseIcon     = if (isDischarging) Icons.Filled.BatteryFull else Icons.Filled.BatteryChargingFull
+                val phaseLabel    = if (isDischarging) "USO" else "CARGA"
+
+                Box(
+                    modifier = Modifier
+                        .padding(end = 14.dp)
+                        .background(
+                            if (phaseActive) phaseColor.copy(alpha = 0.15f) else Color.Transparent,
+                            RoundedCornerShape(10.dp)
+                        )
+                        .border(
+                            1.dp,
+                            if (phaseActive) phaseColor.copy(alpha = 0.5f) else HmiBorder,
+                            RoundedCornerShape(10.dp)
+                        )
+                        .then(
+                            if (phaseActive) Modifier.clickable {
+                                EvStateHolder.sendCommand("auto_phase", if (isDischarging) "80" else "20")
+                            } else Modifier
+                        )
+                        .padding(horizontal = 12.dp, vertical = 8.dp)
+                ) {
+                    Row(
+                        verticalAlignment     = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(6.dp)
+                    ) {
+                        Icon(
+                            imageVector        = phaseIcon,
+                            contentDescription = null,
+                            tint               = if (phaseActive) phaseColor else HmiFgDim,
+                            modifier           = Modifier.size(18.dp)
+                        )
+                        Text(
+                            text          = if (phaseActive) phaseLabel else "--",
+                            fontSize      = 12.sp,
+                            fontWeight    = FontWeight.Bold,
+                            color         = if (phaseActive) phaseColor else HmiFgDim,
+                            letterSpacing = 1.sp
+                        )
+                    }
                 }
             }
             Switch(

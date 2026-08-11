@@ -43,7 +43,7 @@ Before every commit+push, increment the version in `app/build.gradle.kts`:
 ## Ciclo automático (AutoToggleCard)
 
 Quando ativado:
-- Define `power_model_config = 0` (HEV) e `power_reserve_config = 0` (reserva prioritária)
+- Define `power_model_config = 1` (EV) e `power_reserve_config = 0` (reserva prioritária)
 - Cicla `charge_soc_target_config` entre 80 e 20 baseado em `cur_battery_power_percentage`:
   - Fase carregando (`lastSocTarget = 80`): aguarda bateria ≥ 75% → seta SOC = 20
   - Fase descarregando (`lastSocTarget = 20`): aguarda bateria ≤ 20% → seta SOC = 80
@@ -51,6 +51,17 @@ Quando ativado:
 - Ao ativar: salva o valor atual de `power_model_config` em `saved_power_model_config`
 - Ao desativar: restaura `power_model_config` ao valor salvo e remove a chave
 - Chave especial `"auto_enabled"` no `commandCallback` do serviço — não enviada ao carro
+
+### Botão de fase manual (CARGA / USO)
+- No `AutoToggleCard`, ao lado do switch, um botão mostra a fase atual do algoritmo:
+  - `last_soc_target = 80` → **CARGA** (carregando bateria, verde)
+  - `last_soc_target = 20` → **USO** (descarregando bateria, âmbar)
+- Clicável apenas quando conectado **e** ciclo automático ativo — inverte a fase
+- Chave especial `"auto_phase"` no `commandCallback` (valor `"80"`/`"20"`): persiste `last_soc_target` e envia `charge_soc_target_config` correspondente ao carro imediatamente
+- Fase exposta à UI via `EvStateHolder.autoPhase` (atualizada em `pushState`)
+
+### Regra de reconexão (bateria alta)
+- Ao (re)conectar ao veículo com o ciclo ativo: se `cur_battery_power_percentage` > 75%, assume fase **USO** (`last_soc_target = 20`) independente do valor salvo, e envia `charge_soc_target_config = 20`
 
 ## Auto HEV (AutoHevCard)
 

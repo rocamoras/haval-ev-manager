@@ -21,6 +21,9 @@ object EvStateHolder {
     var autoEnabled            by mutableStateOf(false)
     var autoHevEnabled         by mutableStateOf(false)
 
+    /** Current algorithm phase (last_soc_target): "80" = charging, "20" = discharging. */
+    var autoPhase              by mutableStateOf("--")
+
     val actionLog              = mutableStateListOf<String>()
 
     fun interface CommandCallback {
@@ -49,6 +52,11 @@ object EvStateHolder {
         batteryLevel          = battery      ?: "--"
         remainOdometer        = remainOdo    ?: "--"
         basicRemainOdo        = basicOdo     ?: "--"
+    }
+
+    /** Called from Java service to reflect the current algorithm phase. */
+    fun setAutoPhase(phase: String?) {
+        autoPhase = phase ?: "--"
     }
 
     /** Called from Java service to update engine state + last change timestamp. */
