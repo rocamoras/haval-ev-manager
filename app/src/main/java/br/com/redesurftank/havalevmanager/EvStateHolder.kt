@@ -54,11 +54,6 @@ object EvStateHolder {
         basicRemainOdo        = basicOdo     ?: "--"
     }
 
-    /** Called from Java service to reflect the current algorithm phase. */
-    fun setAutoPhase(phase: String?) {
-        autoPhase = phase ?: "--"
-    }
-
     /** Called from Java service to update engine state + last change timestamp. */
     fun setEngineStateData(value: String?, lastChangeFmt: String) {
         engineState      = value        ?: "--"

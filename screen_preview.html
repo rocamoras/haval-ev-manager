@@ -2,7 +2,7 @@
 <html lang="pt-BR">
 <head>
 <meta charset="utf-8" />
-<title>Haval EV Manager — Preview v1.5.0</title>
+<title>Haval EV Manager — Preview v1.6.0</title>
 <meta name="viewport" content="width=device-width,initial-scale=1" />
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -109,6 +109,18 @@ body{background:#111;font-family:var(--font);color:var(--fg);
 .auto-title.off-lbl{color:var(--fg-muted);}
 .auto-phase{font-size:11px;color:var(--fg-dim);}
 
+/* phase toggle button (CARGA / USO) — next to the ciclo switch */
+.phase-btn{
+  display:flex;align-items:center;gap:6px;
+  padding:8px 12px;border-radius:10px;border:1px solid var(--border);
+  margin-right:14px;flex-shrink:0;
+}
+.phase-btn svg{width:18px;height:18px;}
+.phase-btn span{font-size:12px;font-weight:700;letter-spacing:1px;}
+.phase-btn.carga{background:rgba(34,197,94,.15);border-color:rgba(34,197,94,.5);color:var(--accent);}
+.phase-btn.uso{background:rgba(245,158,11,.15);border-color:rgba(245,158,11,.5);color:var(--amber);}
+.phase-btn.inactive{background:transparent;border-color:var(--border);color:var(--fg-dim);}
+
 /* switch */
 .switch-wrap{position:relative;width:51px;height:31px;flex-shrink:0;}
 .switch-track{width:51px;height:31px;border-radius:16px;}
@@ -147,8 +159,9 @@ body{background:#111;font-family:var(--font);color:var(--fg);
 .card-value.bat-amber{color:var(--amber);}
 .card-value.bat-green{color:var(--accent);}
 .card-value.odo{font-size:56px;color:var(--fg-muted);}
-.card-value.eng-on{color:var(--accent);}
-.card-value.eng-off{color:var(--fg-dim);}
+.card-value.eng-on{font-size:56px;color:var(--accent);}
+.card-value.eng-ev{font-size:56px;color:var(--blue);}
+.card-value.eng-off{font-size:56px;color:var(--fg-dim);}
 
 .pct{font-size:18px;font-weight:600;display:block;text-align:center;margin-top:2px;}
 .pct.bat-red{color:rgba(239,68,68,.6);}
@@ -156,8 +169,9 @@ body{background:#111;font-family:var(--font);color:var(--fg);
 .pct.bat-green{color:rgba(34,197,94,.6);}
 
 .km-unit{font-size:16px;color:var(--fg-dim);text-align:center;display:block;margin-top:2px;}
-.eng-lbl{font-size:12px;text-align:center;display:block;margin-top:2px;}
-.eng-lbl.on{color:rgba(34,197,94,.7);}
+.eng-lbl{font-size:13px;font-weight:600;text-align:center;display:block;margin-top:2px;}
+.eng-lbl.on{color:rgba(34,197,94,.85);}
+.eng-lbl.ev{color:rgba(96,165,250,.85);}
 .eng-lbl.off{color:var(--fg-dim);}
 
 /* chips */
@@ -290,7 +304,7 @@ window.addEventListener('resize', applyScale);
       <p>Controle de combustível em viagem</p>
     </div>
     <div class="header-right">
-      <span class="version">v1.5.0</span>
+      <span class="version">v1.6.0</span>
       <!-- update btn: idle -->
       <div class="upd-idle">
         <svg><use href="#ico-refresh" stroke="#6b6b6b"/></svg>
@@ -313,6 +327,10 @@ window.addEventListener('resize', applyScale);
           <div class="auto-title off-lbl">CICLO AUTOMÁTICO</div>
           <div class="auto-phase">Aguardando conexão com o veículo</div>
         </div>
+      </div>
+      <div class="phase-btn inactive">
+        <svg><use href="#ico-bat-full" stroke="#6b6b6b"/></svg>
+        <span>--</span>
       </div>
       <div class="switch-wrap">
         <div class="switch-track sw-off"></div>
@@ -386,12 +404,12 @@ window.addEventListener('resize', applyScale);
         <div class="badge">somente leitura</div>
       </div>
     </div>
-    <!-- basic odo -->
+    <!-- fuel mode odo -->
     <div class="card">
       <div class="card-top">
         <div class="card-icon"><svg><use href="#ico-route" stroke="#6b6b6b"/></svg></div>
-        <div class="card-label">remain_odometer</div>
-        <div class="card-ns">car.basic</div>
+        <div class="card-label">fuel_mode_remain_odometer</div>
+        <div class="card-ns">car.ev_info</div>
       </div>
       <div class="card-value-area"><span class="card-value dim">--</span></div>
       <div class="card-bottom"><div class="badge">somente leitura</div></div>
@@ -420,9 +438,9 @@ window.addEventListener('resize', applyScale);
 
 
 <!-- ═══════════════════════════════════════════════════
-     ESTADO 2 — Conectado · ambos Auto OFF · bat 62% · motor ligado
+     ESTADO 2 — Conectado · ambos Auto OFF · bat 62% · Combustão
 ═══════════════════════════════════════════════════ -->
-<p class="scene-label">Estado 2 — Conectado · Auto OFF · Auto HEV OFF · bat 62% · motor ligado</p>
+<p class="scene-label">Estado 2 — Conectado · Auto OFF · Auto HEV OFF · bat 62% · Combustão</p>
 <div class="scene"><div class="screen">
 
   <div class="header">
@@ -431,11 +449,11 @@ window.addEventListener('resize', applyScale);
       <p>Controle de combustível em viagem</p>
     </div>
     <div class="header-right">
-      <span class="version">v1.5.0</span>
+      <span class="version">v1.6.0</span>
       <!-- update btn: available -->
       <div class="upd-available">
         <svg><use href="#ico-refresh" stroke="#60a5fa"/></svg>
-        <span>1.5.1</span>
+        <span>1.6.1</span>
       </div>
       <div class="dot-wrap">
         <div class="dot on"></div>
@@ -454,6 +472,10 @@ window.addEventListener('resize', applyScale);
           <div class="auto-title off-lbl">CICLO AUTOMÁTICO</div>
           <div class="auto-phase">Toque para ativar o ciclo automático de carga</div>
         </div>
+      </div>
+      <div class="phase-btn inactive">
+        <svg><use href="#ico-bat-full" stroke="#6b6b6b"/></svg>
+        <span>--</span>
       </div>
       <div class="switch-wrap">
         <div class="switch-track sw-off"></div>
@@ -478,16 +500,16 @@ window.addEventListener('resize', applyScale);
   <div class="sp sp10"></div>
 
   <div class="cards">
-    <!-- power_model = 0 -->
-    <div class="card active-0">
+    <!-- power_model = 1 (EV) manual -->
+    <div class="card active-pos">
       <div class="card-top">
-        <div class="card-icon"><svg><use href="#ico-car" stroke="#6b6b6b"/></svg></div>
+        <div class="card-icon"><svg><use href="#ico-car" stroke="#60a5fa"/></svg></div>
         <div class="card-label">power_model_config</div>
         <div class="card-ns">car.ev_setting</div>
       </div>
-      <div class="card-value-area"><span class="card-value v0">0</span></div>
+      <div class="card-value-area"><span class="card-value v1">1</span></div>
       <div class="card-bottom">
-        <div class="chips"><div class="chip sel-0">0</div><div class="chip">1</div><div class="chip">2</div></div>
+        <div class="chips"><div class="chip">0</div><div class="chip sel-1">1</div><div class="chip">2</div></div>
         <div class="card-hint">Toque para alterar</div>
       </div>
     </div>
@@ -536,12 +558,12 @@ window.addEventListener('resize', applyScale);
         <div class="badge">somente leitura</div>
       </div>
     </div>
-    <!-- basic odo 420 km -->
+    <!-- fuel mode odo 420 km -->
     <div class="card">
       <div class="card-top">
         <div class="card-icon"><svg><use href="#ico-route" stroke="#6b6b6b"/></svg></div>
-        <div class="card-label">remain_odometer</div>
-        <div class="card-ns">car.basic</div>
+        <div class="card-label">fuel_mode_remain_odometer</div>
+        <div class="card-ns">car.ev_info</div>
       </div>
       <div class="card-value-area">
         <div class="cv-col">
@@ -551,7 +573,7 @@ window.addEventListener('resize', applyScale);
       </div>
       <div class="card-bottom"><div class="badge">somente leitura</div></div>
     </div>
-    <!-- engine state = 1 ligado -->
+    <!-- engine state = 13 Combustão -->
     <div class="card engine-on-card">
       <div class="card-top">
         <div class="card-icon"><svg><use href="#ico-power" stroke="#22c55e"/></svg></div>
@@ -560,8 +582,8 @@ window.addEventListener('resize', applyScale);
       </div>
       <div class="card-value-area">
         <div class="cv-col">
-          <span class="card-value eng-on">1</span>
-          <span class="eng-lbl on">Ligado</span>
+          <span class="card-value eng-on">13</span>
+          <span class="eng-lbl on">Combustão</span>
         </div>
       </div>
       <div class="card-bottom">
@@ -576,7 +598,7 @@ window.addEventListener('resize', applyScale);
     <div class="log-title">Histórico de Ações</div>
     <div class="log-body">
       <div class="log-row">14:22:31  power_reserve_config → 1</div>
-      <div class="log-row">14:21:55  power_model_config → 0</div>
+      <div class="log-row">14:21:55  power_model_config → 1</div>
     </div>
   </div>
 
@@ -584,9 +606,9 @@ window.addEventListener('resize', applyScale);
 
 
 <!-- ═══════════════════════════════════════════════════
-     ESTADO 3 — Auto Ciclo ON + Auto HEV ON · carregando · bat 45%
+     ESTADO 3 — Ciclo ON (fase USO) + Auto HEV ON · descarregando · bat 45%
 ═══════════════════════════════════════════════════ -->
-<p class="scene-label">Estado 3 — Auto Ciclo ON · Auto HEV ON · carregando · bat 45% · motor ligado</p>
+<p class="scene-label">Estado 3 — Ciclo ON (fase USO) · Auto HEV ON · descarregando · bat 45% · Modo EV</p>
 <div class="scene"><div class="screen">
 
   <div class="header">
@@ -595,7 +617,7 @@ window.addEventListener('resize', applyScale);
       <p>Controle de combustível em viagem</p>
     </div>
     <div class="header-right">
-      <span class="version">v1.5.0</span>
+      <span class="version">v1.6.0</span>
       <div class="upd-idle">
         <svg><use href="#ico-refresh" stroke="#6b6b6b"/></svg>
       </div>
@@ -609,14 +631,18 @@ window.addEventListener('resize', applyScale);
   <div class="sp sp10"></div>
 
   <div class="auto-row">
-    <!-- ciclo ON -->
+    <!-- ciclo ON · fase USO -->
     <div class="auto-card ciclo on">
       <div class="auto-left">
         <div class="auto-icon"><svg><use href="#ico-autorenew" stroke="#22c55e"/></svg></div>
         <div class="auto-texts">
           <div class="auto-title ciclo-on">CICLO AUTOMÁTICO</div>
-          <div class="auto-phase">⬆  Carregando — aguardando bateria ≥ 75%  ·  bateria: 45%</div>
+          <div class="auto-phase">⬇  Descarregando — aguardando bateria ≤ 20%  ·  bateria: 45%</div>
         </div>
+      </div>
+      <div class="phase-btn uso">
+        <svg><use href="#ico-bat-full" stroke="#f59e0b"/></svg>
+        <span>USO</span>
       </div>
       <div class="switch-wrap">
         <div class="switch-track ciclo-on"></div>
@@ -629,7 +655,7 @@ window.addEventListener('resize', applyScale);
         <div class="auto-icon"><svg><use href="#ico-loop" stroke="#3b82f6"/></svg></div>
         <div class="auto-texts">
           <div class="auto-title hev-on">AUTO HEV</div>
-          <div class="auto-phase">Última mudança: 26/05 08:30  ·  420 km  ·  45%</div>
+          <div class="auto-phase">Modo EV · mudança: 26/05 08:30  ·  420 km  ·  45%</div>
         </div>
       </div>
       <div class="switch-wrap">
@@ -642,27 +668,27 @@ window.addEventListener('resize', applyScale);
   <div class="sp sp10"></div>
 
   <div class="cards">
-    <!-- power_model LOCKED -->
+    <!-- power_model LOCKED = 1 (EV) -->
     <div class="card locked">
       <div class="card-top">
         <div class="card-icon"><svg><use href="#ico-car" stroke="rgba(245,158,11,.6)"/></svg></div>
         <div class="card-label">power_model_config</div>
         <div class="card-ns">car.ev_setting</div>
       </div>
-      <div class="card-value-area"><span class="card-value v0">0</span></div>
+      <div class="card-value-area"><span class="card-value v1">1</span></div>
       <div class="card-bottom">
-        <div class="chips"><div class="chip sel-0">0</div><div class="chip">1</div><div class="chip">2</div></div>
-        <div class="card-hint locked-hint">Controlado pelo Auto</div>
+        <div class="chips"><div class="chip">0</div><div class="chip sel-1">1</div><div class="chip">2</div></div>
+        <div class="card-hint locked-hint">Controlado pelo Auto (EV)</div>
       </div>
     </div>
-    <!-- soc target = 80 (AUTO) -->
+    <!-- soc target = 20 (AUTO · fase USO) -->
     <div class="card">
       <div class="card-top">
         <div class="card-icon"><svg><use href="#ico-bat-charge" stroke="#6b6b6b"/></svg></div>
         <div class="card-label">charge_soc_target_config</div>
         <div class="card-ns">car.ev_setting</div>
       </div>
-      <div class="card-value-area"><span class="card-value readonly">80</span></div>
+      <div class="card-value-area"><span class="card-value readonly">20</span></div>
       <div class="card-bottom"><div class="badge">somente leitura</div></div>
     </div>
     <!-- power_reserve LOCKED -->
@@ -700,12 +726,12 @@ window.addEventListener('resize', applyScale);
         <div class="badge">somente leitura</div>
       </div>
     </div>
-    <!-- basic odo 415 km -->
+    <!-- fuel mode odo 415 km -->
     <div class="card">
       <div class="card-top">
         <div class="card-icon"><svg><use href="#ico-route" stroke="#6b6b6b"/></svg></div>
-        <div class="card-label">remain_odometer</div>
-        <div class="card-ns">car.basic</div>
+        <div class="card-label">fuel_mode_remain_odometer</div>
+        <div class="card-ns">car.ev_info</div>
       </div>
       <div class="card-value-area">
         <div class="cv-col">
@@ -715,17 +741,17 @@ window.addEventListener('resize', applyScale);
       </div>
       <div class="card-bottom"><div class="badge">somente leitura</div></div>
     </div>
-    <!-- engine = 1 ligado -->
-    <div class="card engine-on-card">
+    <!-- engine = 11 Modo EV -->
+    <div class="card">
       <div class="card-top">
-        <div class="card-icon"><svg><use href="#ico-power" stroke="#22c55e"/></svg></div>
+        <div class="card-icon"><svg><use href="#ico-power" stroke="#60a5fa"/></svg></div>
         <div class="card-label">engine_state</div>
         <div class="card-ns">car.basic</div>
       </div>
       <div class="card-value-area">
         <div class="cv-col">
-          <span class="card-value eng-on">1</span>
-          <span class="eng-lbl on">Ligado</span>
+          <span class="card-value eng-ev">11</span>
+          <span class="eng-lbl ev">Modo EV</span>
         </div>
       </div>
       <div class="card-bottom">
@@ -739,9 +765,9 @@ window.addEventListener('resize', applyScale);
   <div class="log">
     <div class="log-title">Histórico de Ações</div>
     <div class="log-body">
-      <div class="log-row auto">14:31:02  [AUTO] charge_soc_target_config → 80</div>
+      <div class="log-row auto">14:31:05  [AUTO] charge_soc_target_config → 20</div>
       <div class="log-row auto">14:31:02  [AUTO] power_reserve_config → 0</div>
-      <div class="log-row auto">14:31:02  [AUTO] power_model_config → 0</div>
+      <div class="log-row auto">14:31:02  [AUTO] power_model_config → 1</div>
     </div>
   </div>
 
@@ -749,9 +775,9 @@ window.addEventListener('resize', applyScale);
 
 
 <!-- ═══════════════════════════════════════════════════
-     ESTADO 4 — Auto HEV disparou wade_mode · motor off 26h · bat 15%
+     ESTADO 4 — Auto HEV disparou wade_mode · Modo EV 26h → Combustão · bat 15%
 ═══════════════════════════════════════════════════ -->
-<p class="scene-label">Estado 4 — Auto HEV disparou wade_mode · motor desligado 26h · bat 15% · odo 320km</p>
+<p class="scene-label">Estado 4 — Auto HEV disparou wade_mode · Modo EV 26h → Combustão · bat 15% · fase CARGA</p>
 <div class="scene"><div class="screen">
 
   <div class="header">
@@ -760,7 +786,7 @@ window.addEventListener('resize', applyScale);
       <p>Controle de combustível em viagem</p>
     </div>
     <div class="header-right">
-      <span class="version">v1.5.0</span>
+      <span class="version">v1.6.0</span>
       <!-- update btn: uptodate -->
       <div class="upd-uptodate">
         <svg><use href="#ico-check" stroke="#22c55e"/></svg>
@@ -775,7 +801,7 @@ window.addEventListener('resize', applyScale);
   <div class="sp sp10"></div>
 
   <div class="auto-row">
-    <!-- ciclo ON charging -->
+    <!-- ciclo ON · fase CARGA -->
     <div class="auto-card ciclo on">
       <div class="auto-left">
         <div class="auto-icon"><svg><use href="#ico-autorenew" stroke="#22c55e"/></svg></div>
@@ -783,6 +809,10 @@ window.addEventListener('resize', applyScale);
           <div class="auto-title ciclo-on">CICLO AUTOMÁTICO</div>
           <div class="auto-phase">⬆  Carregando — aguardando bateria ≥ 75%  ·  bateria: 15%</div>
         </div>
+      </div>
+      <div class="phase-btn carga">
+        <svg><use href="#ico-bat-charge" stroke="#22c55e"/></svg>
+        <span>CARGA</span>
       </div>
       <div class="switch-wrap">
         <div class="switch-track ciclo-on"></div>
@@ -795,7 +825,7 @@ window.addEventListener('resize', applyScale);
         <div class="auto-icon"><svg><use href="#ico-loop" stroke="#3b82f6"/></svg></div>
         <div class="auto-texts">
           <div class="auto-title hev-on">AUTO HEV</div>
-          <div class="auto-phase">Última mudança: 25/05 06:12  ·  320 km  ·  15%  — pulso disparado</div>
+          <div class="auto-phase">Modo EV · mudança: 25/05 06:12  ·  320 km  ·  15%  — pulso disparado</div>
         </div>
       </div>
       <div class="switch-wrap">
@@ -808,20 +838,20 @@ window.addEventListener('resize', applyScale);
   <div class="sp sp10"></div>
 
   <div class="cards">
-    <!-- power_model LOCKED -->
+    <!-- power_model LOCKED = 1 (EV) -->
     <div class="card locked">
       <div class="card-top">
         <div class="card-icon"><svg><use href="#ico-car" stroke="rgba(245,158,11,.6)"/></svg></div>
         <div class="card-label">power_model_config</div>
         <div class="card-ns">car.ev_setting</div>
       </div>
-      <div class="card-value-area"><span class="card-value v0">0</span></div>
+      <div class="card-value-area"><span class="card-value v1">1</span></div>
       <div class="card-bottom">
-        <div class="chips"><div class="chip sel-0">0</div><div class="chip">1</div><div class="chip">2</div></div>
-        <div class="card-hint locked-hint">Controlado pelo Auto</div>
+        <div class="chips"><div class="chip">0</div><div class="chip sel-1">1</div><div class="chip">2</div></div>
+        <div class="card-hint locked-hint">Controlado pelo Auto (EV)</div>
       </div>
     </div>
-    <!-- soc = 80 -->
+    <!-- soc = 80 (fase CARGA) -->
     <div class="card">
       <div class="card-top">
         <div class="card-icon"><svg><use href="#ico-bat-charge" stroke="#6b6b6b"/></svg></div>
@@ -866,12 +896,12 @@ window.addEventListener('resize', applyScale);
         <div class="badge">somente leitura</div>
       </div>
     </div>
-    <!-- basic odo 320 km -->
+    <!-- fuel mode odo 320 km -->
     <div class="card">
       <div class="card-top">
         <div class="card-icon"><svg><use href="#ico-route" stroke="#6b6b6b"/></svg></div>
-        <div class="card-label">remain_odometer</div>
-        <div class="card-ns">car.basic</div>
+        <div class="card-label">fuel_mode_remain_odometer</div>
+        <div class="card-ns">car.ev_info</div>
       </div>
       <div class="card-value-area">
         <div class="cv-col">
@@ -881,21 +911,21 @@ window.addEventListener('resize', applyScale);
       </div>
       <div class="card-bottom"><div class="badge">somente leitura</div></div>
     </div>
-    <!-- engine = 0 desligado -->
-    <div class="card">
+    <!-- engine = 13 Combustão (pulso ligou o motor) -->
+    <div class="card engine-on-card">
       <div class="card-top">
-        <div class="card-icon"><svg><use href="#ico-power" stroke="#6b6b6b"/></svg></div>
+        <div class="card-icon"><svg><use href="#ico-power" stroke="#22c55e"/></svg></div>
         <div class="card-label">engine_state</div>
         <div class="card-ns">car.basic</div>
       </div>
       <div class="card-value-area">
         <div class="cv-col">
-          <span class="card-value eng-off">0</span>
-          <span class="eng-lbl off">Desligado</span>
+          <span class="card-value eng-on">13</span>
+          <span class="eng-lbl on">Combustão</span>
         </div>
       </div>
       <div class="card-bottom">
-        <div class="last-change">mudança: 25/05 06:12</div>
+        <div class="last-change">mudança: 08:12 (agora)</div>
         <div class="badge">somente leitura</div>
       </div>
     </div>
