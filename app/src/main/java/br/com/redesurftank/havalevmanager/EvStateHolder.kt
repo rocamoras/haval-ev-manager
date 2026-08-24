@@ -24,6 +24,22 @@ object EvStateHolder {
     /** Current algorithm phase (last_soc_target): "80" = charging, "20" = discharging. */
     var autoPhase              by mutableStateOf("--")
 
+    /**
+     * Card de carga na Home da MediaCenter (injeção Frida). Persistido em
+     * SharedPreferences pela própria UI; o serviço aplica via [onHomeCardToggle].
+     */
+    var homeCardEnabled        by mutableStateOf(false)
+
+    fun interface ToggleCallback {
+        fun onToggle(enabled: Boolean)
+    }
+
+    /**
+     * UI → serviço. Separado de [commandCallback] porque o card não depende de
+     * conexão com o veículo: só de Shizuku.
+     */
+    @JvmField @Volatile var onHomeCardToggle: ToggleCallback? = null
+
     val actionLog              = mutableStateListOf<String>()
 
     fun interface CommandCallback {
