@@ -39,7 +39,6 @@ import java.util.regex.Pattern;
 import br.com.redesurftank.havalevmanager.App;
 import br.com.redesurftank.havalevmanager.EvStateHolder;
 import br.com.redesurftank.havalevmanager.broadcastReceivers.RestartReceiver;
-import br.com.redesurftank.havalevmanager.utils.FridaUtils;
 import br.com.redesurftank.havalevmanager.utils.IPTablesUtils;
 import br.com.redesurftank.havalevmanager.utils.TelnetClientWrapper;
 import rikka.shizuku.Shizuku;
@@ -61,13 +60,6 @@ public class EvManagerService extends Service implements Shizuku.OnBinderDeadLis
     private static final String KEY_LAST_ENGINE_STATE_1_TIME = "last_engine_state_1_ms";
     private static final String KEY_LAST_ENGINE_CHANGE_TIME  = "last_engine_change_ms";
     private static final int    DEFAULT_SOC_TARGET           = 80;   // start in charging phase
-
-    // Card na Home — prefs da UI (mesmo arquivo lido pelo MainActivity) e tempos
-    private static final String UI_PREFS_NAME          = "ev_manager_ui_prefs";
-    private static final String KEY_HOME_CARD          = "home_card_enabled";
-    private static final long   HOME_CARD_WATCHDOG_MS  = 10_000;  // re-injeta se cair / MediaCenter reiniciar
-    private static final long   HOME_CARD_RETRY_MS     = 1_000;   // MediaCenter ainda não subiu (boot)
-    private static final long   HOME_CARD_RESTORE_MS   = 3_000;   // folga p/ o script restaurar a fileira
 
     private static final String PROP_POWER_MODEL_CONFIG       = "car.ev_setting.power_model_config";
     private static final String PROP_CHARGE_SOC_TARGET_CONFIG = "car.ev_setting.charge_soc_target_config";
@@ -120,13 +112,6 @@ public class EvManagerService extends Service implements Shizuku.OnBinderDeadLis
 
     private final SimpleDateFormat timeFormat       = new SimpleDateFormat("HH:mm:ss", Locale.getDefault());
     private final SimpleDateFormat changeDateFormat = new SimpleDateFormat("dd/MM HH:mm", Locale.getDefault());
-
-    // Card na Home (MediaCenter) — injeção Frida + watchdog de 10s
-    private volatile boolean homeCardEnabled      = false;
-    private volatile boolean homeCardBootstrapped = false;
-    private volatile boolean homeCardInjected     = false;
-    private volatile String  injectedMediaCenterPid = "";
-    private final Runnable   homeCardWatchdogRunnable = this::homeCardWatchdogTick;
 
     // Auto HEV — 1-minute polling loop
     private final Runnable autoHevRunnable = new Runnable() {
@@ -266,7 +251,6 @@ public class EvManagerService extends Service implements Shizuku.OnBinderDeadLis
     @Override
     public void onDestroy() {
         backgroundHandler.removeCallbacks(autoHevRunnable);
-        backgroundHandler.removeCallbacks(homeCardWatchdogRunnable);
         if (handlerThread != null) handlerThread.quitSafely();
         isServiceRunning = false;
         Shizuku.removeBinderReceivedListener(this::onShizukuBinderReceived);
@@ -279,7 +263,6 @@ public class EvManagerService extends Service implements Shizuku.OnBinderDeadLis
             EvStateHolder.INSTANCE.updateEvData(false, null, null, null, null, null, null);
             EvStateHolder.INSTANCE.setEngineStateData(null, "--");
             EvStateHolder.INSTANCE.commandCallback = null;
-            EvStateHolder.INSTANCE.onHomeCardToggle = null;
         });
         Log.w(TAG, "Service destroyed");
         super.onDestroy();
@@ -319,10 +302,6 @@ public class EvManagerService extends Service implements Shizuku.OnBinderDeadLis
         } catch (Exception e) {
             Log.e(TAG, "Error unlocking iptables: " + e.getMessage(), e);
         }
-
-        // Antes de conectar ao veículo: encurta a janela em que a fileira de mídia
-        // online do OEM fica visível depois do boot.
-        backgroundHandler.post(this::bootstrapHomeCard);
 
         backgroundHandler.post(new Runnable() {
             @Override
@@ -627,7 +606,6 @@ public class EvManagerService extends Service implements Shizuku.OnBinderDeadLis
             EvStateHolder.INSTANCE.setAutoPhase(autoPhase);
             EvStateHolder.INSTANCE.setEngineStateData(engineState, lastChangeFmt);
         });
-        refreshHomeCardState();
         evaluateAutomation();
     }
 
@@ -716,126 +694,6 @@ public class EvManagerService extends Service implements Shizuku.OnBinderDeadLis
             case PROP_ENGINE_STATE:             return "engine_state";
             case PROP_WADE_MODE:                return "wade_mode_enable";
             default:                            return key;
-        }
-    }
-
-    // ──────────────────────────────────────────────────────────────────────────
-    // Card na Home — injeção Frida na MediaCenter
-    // ──────────────────────────────────────────────────────────────────────────
-
-    /**
-     * Registra o callback da UI e aplica a pref persistida. Idempotente:
-     * checkAndInitialize() pode rodar mais de uma vez.
-     */
-    private void bootstrapHomeCard() {
-        if (homeCardBootstrapped) return;
-        homeCardBootstrapped = true;
-
-        EvStateHolder.INSTANCE.onHomeCardToggle = enabled ->
-                backgroundHandler.post(() -> applyHomeCard(enabled));
-
-        boolean wanted = false;
-        try {
-            wanted = App.getContext()
-                    .getSharedPreferences(UI_PREFS_NAME, Context.MODE_PRIVATE)
-                    .getBoolean(KEY_HOME_CARD, false);
-        } catch (Exception e) {
-            Log.w(TAG, "Falha lendo pref home_card: " + e.getMessage());
-        }
-        if (wanted) {
-            mainHandler.post(() -> EvStateHolder.INSTANCE.setHomeCardEnabled(true));
-            applyHomeCard(true);
-        }
-    }
-
-    /** (Des)ativa o card de carga na tela principal da MediaCenter. No backgroundHandler. */
-    private void applyHomeCard(boolean enabled) {
-        homeCardEnabled = enabled;
-        backgroundHandler.removeCallbacks(homeCardWatchdogRunnable);
-        if (enabled) {
-            String msg = FridaUtils.startHomeCard(homeCardStateLine());
-            injectedMediaCenterPid = FridaUtils.mediaCenterPid();
-            homeCardInjected = !injectedMediaCenterPid.isEmpty()
-                    && FridaUtils.isHomeCardInjectionAlive();
-            Log.w(TAG, "[homecard] ativado: " + msg + " (mediacenter pid="
-                    + injectedMediaCenterPid + ", injetado=" + homeCardInjected + ")");
-            // MediaCenter ainda não subiu (pid vazio no boot): reintenta em 1s.
-            backgroundHandler.postDelayed(homeCardWatchdogRunnable,
-                    homeCardInjected ? HOME_CARD_WATCHDOG_MS : HOME_CARD_RETRY_MS);
-        } else {
-            // Grava "off" e só encerra o injetor depois que o script teve tempo de
-            // restaurar a fileira — matá-lo antes congelaria a tela sem os ícones.
-            String msg = FridaUtils.stopHomeCard();
-            injectedMediaCenterPid = "";
-            homeCardInjected       = false;
-            backgroundHandler.postDelayed(() -> {
-                if (!homeCardEnabled) FridaUtils.stopHomeCardInjection();
-            }, HOME_CARD_RESTORE_MS);
-            Log.w(TAG, "[homecard] desativado: " + msg);
-        }
-    }
-
-    /** Watchdog: a cada 10s re-injeta se o injetor caiu ou a MediaCenter reiniciou. */
-    private void homeCardWatchdogTick() {
-        if (!homeCardEnabled) return;
-        try {
-            String currentPid = FridaUtils.mediaCenterPid();
-            boolean restarted = !currentPid.isEmpty() && !currentPid.equals(injectedMediaCenterPid);
-            if (restarted || !FridaUtils.isHomeCardInjectionAlive()) {
-                Log.w(TAG, "[homecard] watchdog re-injetando (restart=" + restarted + ")");
-                FridaUtils.startHomeCard(homeCardStateLine());
-                injectedMediaCenterPid = FridaUtils.mediaCenterPid();
-                homeCardInjected = !injectedMediaCenterPid.isEmpty()
-                        && FridaUtils.isHomeCardInjectionAlive();
-            } else {
-                homeCardInjected = true;
-            }
-        } catch (Exception e) {
-            Log.e(TAG, "[homecard] watchdog erro: " + e.getMessage(), e);
-        } finally {
-            if (homeCardEnabled) {
-                backgroundHandler.postDelayed(homeCardWatchdogRunnable,
-                        homeCardInjected ? HOME_CARD_WATCHDOG_MS : HOME_CARD_RETRY_MS);
-            }
-        }
-    }
-
-    /**
-     * Linha de estado lida pelo script a cada 1,5 s — o script não fala com o
-     * veículo, quem tem as chaves car.ev_* e a fase do ciclo é este serviço:
-     *
-     *   on;conn=1;auto=1;phase=80;soc=62;km=142;target=80
-     */
-    private String homeCardStateLine() {
-        boolean autoOn = prefs != null && prefs.getBoolean(KEY_AUTO_ENABLED, false);
-        int     phase  = prefs != null
-                ? prefs.getInt(KEY_LAST_SOC_TARGET, DEFAULT_SOC_TARGET) : DEFAULT_SOC_TARGET;
-        return "on"
-                + ";conn="   + (isServiceRunning && controlService != null ? "1" : "0")
-                + ";auto="   + (autoOn ? "1" : "0")
-                + ";phase="  + phase
-                + ";soc="    + numOrDash(dataCache.get(PROP_BATTERY_CURRENT))
-                + ";km="     + numOrDash(dataCache.get(PROP_REMAIN_ODOMETER))
-                + ";target=" + numOrDash(dataCache.get(PROP_CHARGE_SOC_TARGET_CONFIG));
-    }
-
-    /** Valor inteiro do cache, ou "--" quando ausente/ilegível (o script trata os dois). */
-    private static String numOrDash(String raw) {
-        if (raw == null) return "--";
-        try {
-            return String.valueOf((int) Double.parseDouble(raw.trim()));
-        } catch (NumberFormatException e) {
-            return "--";
-        }
-    }
-
-    /** Republica os valores no arquivo de estado. Só grava se a linha mudou. */
-    private void refreshHomeCardState() {
-        if (!homeCardEnabled) return;
-        try {
-            FridaUtils.pushHomeCardState(homeCardStateLine());
-        } catch (Exception e) {
-            Log.w(TAG, "[homecard] falha publicando estado: " + e.getMessage());
         }
     }
 

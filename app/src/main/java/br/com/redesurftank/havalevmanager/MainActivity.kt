@@ -23,7 +23,6 @@ import androidx.compose.material.icons.filled.Autorenew
 import androidx.compose.material.icons.filled.BatteryChargingFull
 import androidx.compose.material.icons.filled.BatteryFull
 import androidx.compose.material.icons.filled.Check
-import androidx.compose.material.icons.filled.Dashboard
 import androidx.compose.material.icons.filled.ElectricCar
 import androidx.compose.material.icons.filled.Loop
 import androidx.compose.material.icons.filled.Power
@@ -46,7 +45,6 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.core.content.FileProvider
 import br.com.redesurftank.havalevmanager.ui.theme.HavalEvManagerTheme
-import br.com.redesurftank.havalevmanager.utils.FridaUtils
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
@@ -65,8 +63,6 @@ private const val GITHUB_RELEASES_API =
 private const val UI_PREFS                 = "ev_manager_ui_prefs"
 private const val KEY_LAST_UPDATE_CHECK    = "last_update_check_ms"
 private const val UPDATE_CHECK_INTERVAL_MS = 24 * 60 * 60 * 1000L
-/** Card de carga na Home — mesma chave lida pelo EvManagerService. */
-private const val KEY_HOME_CARD            = "home_card_enabled"
 
 // ─────────────────────────────────────────────────────────────
 // HMI color tokens — matches haval-climate-control palette
@@ -152,10 +148,6 @@ fun MainScreen() {
             currentVersion = context.packageManager
                 .getPackageInfo(context.packageName, 0).versionName ?: "--"
         } catch (_: PackageManager.NameNotFoundException) {}
-
-        // O serviço também lê esta pref no bootstrap; aqui é só para a UI abrir
-        // com o switch no estado certo mesmo antes de o serviço registrar o callback.
-        state.homeCardEnabled = prefs.getBoolean(KEY_HOME_CARD, false)
 
         val lastCheck = prefs.getLong(KEY_LAST_UPDATE_CHECK, 0L)
         if (System.currentTimeMillis() - lastCheck >= UPDATE_CHECK_INTERVAL_MS) {
@@ -321,15 +313,6 @@ fun MainScreen() {
                 lastChange  = state.lastEngineChange,
                 basicOdo    = state.basicRemainOdo,
                 battery     = state.batteryLevel
-            )
-            HomeCardToggleCard(
-                modifier = Modifier.width(340.dp),
-                enabled  = state.homeCardEnabled,
-                onToggle = { on ->
-                    state.homeCardEnabled = on
-                    prefs.edit().putBoolean(KEY_HOME_CARD, on).apply()
-                    state.onHomeCardToggle?.onToggle(on)
-                }
             )
         }
 
@@ -1145,91 +1128,6 @@ fun AutoHevCard(
                     uncheckedThumbColor         = HmiFgDim,
                     uncheckedTrackColor         = HmiSurface2,
                     disabledCheckedTrackColor   = accentBlue.copy(alpha = 0.38f),
-                    disabledUncheckedTrackColor = HmiSurface2.copy(alpha = 0.38f)
-                )
-            )
-        }
-    }
-}
-
-// ─────────────────────────────────────────────────────────────
-// HomeCardToggle — card de carga na Home da MediaCenter (injeção Frida)
-// ─────────────────────────────────────────────────────────────
-
-/**
- * Liga/desliga o card de carga na tela principal da central. Não depende de
- * conexão com o veículo — só de Shizuku e dos binários do Frida, que só existem
- * no APK do Release/CI (no debug o res/raw é placeholder).
- *
- * O card aparece ao lado do card de clima do haval-climate-control; a disputa
- * pelo espaço é resolvida dentro do script injetado (protocolo de slots).
- */
-@Composable
-fun HomeCardToggleCard(
-    modifier : Modifier = Modifier,
-    enabled  : Boolean,
-    onToggle : (Boolean) -> Unit
-) {
-    val fridaAvailable = remember { FridaUtils.fridaToolsEmbedded() }
-    val accent         = if (enabled) HmiAccent else HmiFgDim
-
-    val statusText = when {
-        !fridaAvailable -> "Indisponível neste APK (build debug)"
-        enabled         -> "Visível na Home — toque no card abre este app"
-        else            -> "Mostrar o estado da carga na tela da central"
-    }
-
-    Box(
-        modifier = modifier
-            .background(
-                if (enabled) Brush.horizontalGradient(listOf(HmiAccentSoft, Color.Transparent))
-                else Brush.horizontalGradient(listOf(Color.Transparent, Color.Transparent)),
-                RoundedCornerShape(18.dp)
-            )
-            .border(1.dp, if (enabled) HmiAccentEdge else HmiBorder, RoundedCornerShape(18.dp))
-            .padding(horizontal = 20.dp, vertical = 14.dp)
-    ) {
-        Row(
-            modifier              = Modifier.fillMaxWidth(),
-            verticalAlignment     = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.SpaceBetween
-        ) {
-            Row(
-                modifier              = Modifier.weight(1f),
-                verticalAlignment     = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(14.dp)
-            ) {
-                Icon(
-                    imageVector        = Icons.Filled.Dashboard,
-                    contentDescription = null,
-                    tint               = accent,
-                    modifier           = Modifier.size(24.dp)
-                )
-                Column(verticalArrangement = Arrangement.spacedBy(3.dp)) {
-                    Text(
-                        text          = "CARD NA HOME",
-                        fontSize      = 12.sp,
-                        fontWeight    = FontWeight.Bold,
-                        color         = if (enabled) HmiAccent else HmiFgMuted,
-                        letterSpacing = 1.5.sp
-                    )
-                    Text(
-                        text     = statusText,
-                        fontSize = 11.sp,
-                        color    = HmiFgDim
-                    )
-                }
-            }
-            Switch(
-                checked         = enabled,
-                onCheckedChange = { if (fridaAvailable) onToggle(it) },
-                enabled         = fridaAvailable,
-                colors          = SwitchDefaults.colors(
-                    checkedThumbColor           = HmiBg,
-                    checkedTrackColor           = HmiAccent,
-                    uncheckedThumbColor         = HmiFgDim,
-                    uncheckedTrackColor         = HmiSurface2,
-                    disabledCheckedTrackColor   = HmiAccent.copy(alpha = 0.38f),
                     disabledUncheckedTrackColor = HmiSurface2.copy(alpha = 0.38f)
                 )
             )

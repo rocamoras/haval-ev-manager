@@ -15,8 +15,8 @@ android {
         minSdk = 28
         //noinspection ExpiredTargetSdkVersion
         targetSdk = 28
-        versionCode = 15
-        versionName = "1.7.0"
+        versionCode = 16
+        versionName = "1.7.1"
     }
 
     signingConfigs {
@@ -47,33 +47,6 @@ android {
         compose = true
     }
 }
-
-/**
- * Um byte de controle dentro de um .js faz o parser do Frida abortar o script
- * INTEIRO, e isso só aparece no log da injeção — nem no build, nem na UI.
- * (haval-engine-reverse/docs/HANDOFF-cards-midia-online.md §7.1)
- */
-val checkFridaScripts = tasks.register("checkFridaScripts") {
-    val rawDir = layout.projectDirectory.dir("src/main/res/raw").asFile
-    doLast {
-        val problems = (rawDir.listFiles() ?: emptyArray())
-            .filter { it.name.endsWith(".js") }
-            .mapNotNull { f ->
-                val idx = f.readBytes().indexOfFirst {
-                    val v = it.toInt() and 0xFF
-                    v < 9 || v in 11..12 || v in 14..31
-                }
-                if (idx >= 0) "${f.name}: byte de controle no offset $idx" else null
-            }
-        if (problems.isNotEmpty()) {
-            throw GradleException(
-                "script Frida com byte de controle (o parser do Frida aborta): " +
-                    problems.joinToString("; ")
-            )
-        }
-    }
-}
-tasks.named("preBuild") { dependsOn(checkFridaScripts) }
 
 kotlin {
     jvmToolchain(11)

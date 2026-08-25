@@ -37,21 +37,6 @@ jobs:
         run: |
           echo "${{ secrets.SIGNING_KEYSTORE_BASE64 }}" | base64 -d > app/release.keystore
 
-      - name: Fetch Frida 16.x binaries (arm64) into res/raw
-        run: |
-          # Frida 17 removeu o bridge global `Java` (virou módulo externo). Usamos
-          # 16.7.19 — a mesma versão do haval-climate-control, que compartilha o
-          # fridaserver com este app.
-          FV=16.7.19
-          BASE="https://github.com/frida/frida/releases/download/${FV}"
-          curl -fL -o fs.xz "${BASE}/frida-server-${FV}-android-arm64.xz"
-          curl -fL -o fi.xz "${BASE}/frida-inject-${FV}-android-arm64.xz"
-          xz -d fs.xz && xz -d fi.xz
-          mv fs app/src/main/res/raw/fridaserver
-          mv fi app/src/main/res/raw/fridainject
-          chmod 644 app/src/main/res/raw/fridaserver app/src/main/res/raw/fridainject
-          ls -la app/src/main/res/raw/fridaserver app/src/main/res/raw/fridainject
-
       - name: Build release APK
         env:
           SIGNING_STORE_PASSWORD: ${{ secrets.SIGNING_STORE_PASSWORD }}
