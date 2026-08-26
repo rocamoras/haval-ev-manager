@@ -31,7 +31,7 @@ Before every commit+push, increment the version in `app/build.gradle.kts`:
 
 | Chave | Comportamento |
 |-------|--------------|
-| `car.ev_setting.power_model_config` | Clicável — cicla 0→1→2→0 (bloqueado quando Auto ativo) |
+| `car.ev_setting.power_model_config` | Clicável — cicla 0→1→2→0 (0=HEV, 1=EV; bloqueado quando Auto ativo) |
 | `car.ev_setting.charge_soc_target_config` | Somente leitura (gerenciado pelo Auto quando ativo) |
 | `car.ev_setting.power_reserve_config` | Clicável — cicla 0→1→2→0 (bloqueado quando Auto ativo) |
 | `car.ev_info.cur_battery_power_percentage` | Somente leitura — % da bateria (usado pelo ciclo automático) |
@@ -43,7 +43,11 @@ Before every commit+push, increment the version in `app/build.gradle.kts`:
 ## Ciclo automático (AutoToggleCard)
 
 Quando ativado:
-- Define `power_model_config = 1` (EV) e `power_reserve_config = 0` (reserva prioritária)
+- Define `power_reserve_config = 0` (reserva prioritária)
+- `power_model_config` acompanha a fase do ciclo:
+  - Fase **CARGA** (`last_soc_target = 80`) → `power_model_config = 0` (**HEV** — motor recarrega a bateria até 80%)
+  - Fase **USO** (`last_soc_target = 20`) → `power_model_config = 1` (**EV** — prioridade elétrica)
+  - Aplicado ao ativar, em cada troca de fase (automática ou manual), na reconexão e no enforcement periódico
 - Cicla `charge_soc_target_config` entre 80 e 20 baseado em `cur_battery_power_percentage`:
   - Fase carregando (`lastSocTarget = 80`): aguarda bateria ≥ 75% → seta SOC = 20
   - Fase descarregando (`lastSocTarget = 20`): aguarda bateria ≤ 20% → seta SOC = 80
@@ -57,11 +61,11 @@ Quando ativado:
   - `last_soc_target = 80` → **CARGA** (carregando bateria, verde)
   - `last_soc_target = 20` → **USO** (descarregando bateria, âmbar)
 - Clicável apenas quando conectado **e** ciclo automático ativo — inverte a fase
-- Chave especial `"auto_phase"` no `commandCallback` (valor `"80"`/`"20"`): persiste `last_soc_target` e envia `charge_soc_target_config` correspondente ao carro imediatamente
+- Chave especial `"auto_phase"` no `commandCallback` (valor `"80"`/`"20"`): persiste `last_soc_target`, envia `charge_soc_target_config` correspondente e ajusta `power_model_config` (HEV/EV) imediatamente
 - Fase exposta à UI via `EvStateHolder.autoPhase` (atualizada em `pushState`)
 
 ### Regra de reconexão (bateria alta)
-- Ao (re)conectar ao veículo com o ciclo ativo: se `cur_battery_power_percentage` > 75%, assume fase **USO** (`last_soc_target = 20`) independente do valor salvo, e envia `charge_soc_target_config = 20`
+- Ao (re)conectar ao veículo com o ciclo ativo: se `cur_battery_power_percentage` > 75%, assume fase **USO** (`last_soc_target = 20`) independente do valor salvo, e envia `charge_soc_target_config = 20` + `power_model_config = 1` (EV)
 
 ## Auto HEV (AutoHevCard)
 
