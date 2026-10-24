@@ -39,6 +39,7 @@ import java.util.regex.Pattern;
 import br.com.redesurftank.havalevmanager.App;
 import br.com.redesurftank.havalevmanager.EvStateHolder;
 import br.com.redesurftank.havalevmanager.broadcastReceivers.RestartReceiver;
+import br.com.redesurftank.havalevmanager.utils.HomeCardState;
 import br.com.redesurftank.havalevmanager.utils.IPTablesUtils;
 import br.com.redesurftank.havalevmanager.utils.TelnetClientWrapper;
 import rikka.shizuku.Shizuku;
@@ -60,6 +61,9 @@ public class EvManagerService extends Service implements Shizuku.OnBinderDeadLis
     private static final String KEY_LAST_ENGINE_STATE_1_TIME = "last_engine_state_1_ms";
     private static final String KEY_LAST_ENGINE_CHANGE_TIME  = "last_engine_change_ms";
     private static final int    DEFAULT_SOC_TARGET           = 80;   // start in charging phase
+
+    /** Intervalo do heartbeat da linha lida pelo card na Home (o script expira em 90 s). */
+    private static final long   HOME_CARD_HEARTBEAT_MS       = 15_000;
     private static final String POWER_MODEL_HEV              = "0";  // fase CARGA — motor recarrega a bateria
     private static final String POWER_MODEL_EV               = "1";  // fase USO — prioridade elétrica
 
@@ -114,6 +118,17 @@ public class EvManagerService extends Service implements Shizuku.OnBinderDeadLis
 
     private final SimpleDateFormat timeFormat       = new SimpleDateFormat("HH:mm:ss", Locale.getDefault());
     private final SimpleDateFormat changeDateFormat = new SimpleDateFormat("dd/MM HH:mm", Locale.getDefault());
+
+    // Card do ciclo na Home — heartbeat que mantém o `ts` da linha de estado fresco.
+    // pushState() já republica a cada dado do veículo; isto cobre o período em que o
+    // carro não manda nada e evita que o script derrube o card por linha vencida.
+    private final Runnable homeCardRunnable = new Runnable() {
+        @Override
+        public void run() {
+            publishHomeCardState();
+            backgroundHandler.postDelayed(this, HOME_CARD_HEARTBEAT_MS);
+        }
+    };
 
     // Auto HEV — 1-minute polling loop
     private final Runnable autoHevRunnable = new Runnable() {
@@ -253,6 +268,9 @@ public class EvManagerService extends Service implements Shizuku.OnBinderDeadLis
     @Override
     public void onDestroy() {
         backgroundHandler.removeCallbacks(autoHevRunnable);
+        backgroundHandler.removeCallbacks(homeCardRunnable);
+        // Antes do quitSafely: o Shizuku faz IPC síncrono e não pode ir na main thread.
+        backgroundHandler.post(HomeCardState::clear);
         if (handlerThread != null) handlerThread.quitSafely();
         isServiceRunning = false;
         Shizuku.removeBinderReceivedListener(this::onShizukuBinderReceived);
@@ -414,6 +432,10 @@ public class EvManagerService extends Service implements Shizuku.OnBinderDeadLis
                 backgroundHandler.postDelayed(autoHevRunnable, 60_000);
                 Log.d(TAG, "Auto HEV loop resumed after (re)connect");
             }
+
+            // Heartbeat do card na Home — idempotente: reconectar não empilha ticks.
+            backgroundHandler.removeCallbacks(homeCardRunnable);
+            backgroundHandler.post(homeCardRunnable);
 
             Shizuku.addBinderDeadListener(this);
             pushState();
@@ -611,7 +633,38 @@ public class EvManagerService extends Service implements Shizuku.OnBinderDeadLis
             EvStateHolder.INSTANCE.setAutoPhase(autoPhase);
             EvStateHolder.INSTANCE.setEngineStateData(engineState, lastChangeFmt);
         });
+        publishHomeCardState();
         evaluateAutomation();
+    }
+
+    /**
+     * Publica o estado do ciclo para o card na Home da MediaCenter.
+     *
+     * Quem desenha o card é o script Frida do haval-climate-control — este app não
+     * injeta nada (ver {@link HomeCardState} e o revert 88b1425). Roda sempre no
+     * backgroundHandler, porque o Shizuku faz IPC síncrono.
+     */
+    private void publishHomeCardState() {
+        boolean autoOn = prefs != null && prefs.getBoolean(KEY_AUTO_ENABLED, false);
+        int     phase  = prefs != null
+                ? prefs.getInt(KEY_LAST_SOC_TARGET, DEFAULT_SOC_TARGET) : DEFAULT_SOC_TARGET;
+        String line = "conn="  + (isServiceRunning && controlService != null ? "1" : "0")
+                + ";auto="     + (autoOn ? "1" : "0")
+                + ";phase="    + phase
+                + ";soc="      + numOrDash(dataCache.get(PROP_BATTERY_CURRENT))
+                + ";model="    + numOrDash(dataCache.get(PROP_POWER_MODEL_CONFIG))
+                + ";ts="       + (System.currentTimeMillis() / 1000L);
+        HomeCardState.publish(line);
+    }
+
+    /** Valor inteiro do cache, ou "--" quando ausente/ilegível (o script trata os dois). */
+    private static String numOrDash(String raw) {
+        if (raw == null) return "--";
+        try {
+            return String.valueOf((int) Double.parseDouble(raw.trim()));
+        } catch (NumberFormatException e) {
+            return "--";
+        }
     }
 
     /**

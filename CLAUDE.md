@@ -80,3 +80,41 @@ Quando ativado:
 - Persiste `auto_hev_enabled`, `last_engine_state_1_ms`, `last_engine_change_ms` em SharedPreferences
 - Registra transições genuínas de `engine_state` com timestamp — nunca sobrescreve na primeira leitura
 - `engine_state = 11` → Modo EV (azul); `engine_state = 13` → Modo Combustão (verde)
+
+## Card do ciclo na Home da MediaCenter
+
+O card do ciclo automático aparece na tela principal da MediaCenter, ao lado do card
+de clima. **Este app não injeta nada.** Quem desenha é o script
+`com_beantechs_mediacenter_card.js` do **haval-climate-control** — agente Frida único
+no processo `com.beantechs.mediacenter`.
+
+> Por quê: a v1.7.0 teve agente próprio e derrubou o ART em campo (SIGSEGV em
+> `MterpInvokeVirtual`, dois agentes hookando os mesmos `ArtMethod`, dois watchdogs
+> com `pkill` + reinjetar a cada 10s). Revertida em 88b1425. **Não reintroduzir
+> Frida aqui.**
+
+### Contrato: `/data/local/tmp/haval_ev_home_card`
+
+Linha única, escrita por `HomeCardState.publish()` via Shizuku (`cp` + `chmod 644`):
+
+```
+conn=1;auto=1;phase=80;soc=62;model=0;ts=1761300000
+```
+
+| Campo | Origem |
+|---|---|
+| `conn` | serviço ligado ao veículo (`isServiceRunning && controlService != null`) |
+| `auto` | pref `auto_enabled` |
+| `phase` | pref `last_soc_target` — 80 = CARGA, 20 = USO |
+| `soc` | `cur_battery_power_percentage`, ou `--` |
+| `model` | `power_model_config` (0 = HEV, 1 = EV), ou `--` |
+| `ts` | epoch em segundos |
+
+- Publicado em todo `pushState()` **e** por um heartbeat de 15s (`homeCardRunnable`),
+  para o `ts` não vencer quando o carro para de mandar dados.
+- O script descarta a linha com mais de **90s** e tira o card da tela — serviço morto
+  não deixa número velho na Home.
+- `onDestroy` apaga o arquivo (`HomeCardState.clear()`).
+- Mudar o formato exige mudar junto o `readEvState()` do script no outro repositório.
+
+Preview aprovado do desenho: `preview/auto-cycle-card-preview.html`.
